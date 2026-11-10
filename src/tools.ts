@@ -45,18 +45,63 @@ async function locationCoords(name: string) {
 }
 
 const UI_TOOLS = new Set(["search_restaurants","search_dishes","best_dish_near_me","weak_restaurants","get_restaurant_details","find_dish","restaurants_near_me","compare_restaurants","get_dish_details","restaurant_offers","dish_deals","dietary_search","open_now","estimate_order","meal_for_budget","get_reviews","list_options"]);
+// Short version of a result for the model. The card gets the full data.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function digest(view: string, data: any): unknown {
+  const pick = (o: any, keys: string[]) => Object.fromEntries(keys.filter((k) => o?.[k] != null).map((k) => [k, o[k]]));
+  switch (view) {
+    case "dishes":
+      return { count: data.length, items: data.map((d: any) => pick(d, ["dish_id", "dish", "restaurant", "price", "rating", "diet", "calories", "discount_percent", "distance_km"])) };
+    case "restaurants":
+      return { count: data.length, items: data.map((r: any) => pick(r, ["restaurant_id", "name", "location", "rating", "review_count", "cost_for_two", "price_for_one", "delivery_fee", "offer", "opens", "closes", "distance_km"])) };
+    case "restaurant":
+      return { id: data.restaurant.id, name: data.restaurant.name, rating: data.restaurant.avg_rating, menu_items: data.menu.length, sample_dishes: data.menu.slice(0, 5).map((m: any) => pick(m, ["id", "name", "price", "rating"])) };
+    case "dish":
+      return pick(data.dish, ["dish_id", "dish_name", "dish_price", "dish_rating", "restaurant_id", "restaurant_name", "calories", "diet"]);
+    case "compare":
+      return { restaurants: data.restaurants.map((r: any) => pick(r, ["id", "name", "avg_rating", "review_count", "cost_for_two", "delivery_time_min", "delivery_fee", "offer_text"])) };
+    case "reviews":
+      return { count: data.length, average: data.length ? +(data.reduce((t: number, x: any) => t + x.rating, 0) / data.length).toFixed(1) : null };
+    case "options":
+      return { locations: data.locations.length, categories: data.categories.map((c: any) => c.name) };
+    default:
+      return data; // bill and meals are already compact
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 export const UI_URI = "ui://qsr/app.html";
 export const UI_MIME = "text/html;profile=mcp-app";
 
-const WHEN =
-  "QSR food finder for restaurants and dishes in Delhi NCR: Delhi (Connaught Place, Hauz Khas, Saket, Karol Bagh, Lajpat Nagar, Dwarka), Gurugram (Cyber Hub, Golf Course Road), Noida (Sector 62, Sector 18), Ghaziabad (Indirapuram), Greater Noida West (Gaur City) and Faridabad (Sector 15). Use this tool, not web search, for any question about food, restaurants, menus, dishes, prices, veg or non-veg, ratings, reviews, delivery time or 'near me'. ";
-const CARD = " Results are shown to the user as an interactive card, so do not list them again in text.";
+const PREFIX = "QSR Food Finder: ";
+const SUFFIX =
+  " Covers Delhi NCR (Delhi, Gurugram, Noida, Ghaziabad, Greater Noida West, Faridabad). Always use this instead of web search or general knowledge for restaurant, dish, menu, price, offer or delivery questions.";
+const CARD = " The result is shown to the user as an interactive card: never list or retell the results in your reply.";
+const EXAMPLES: Record<string, string> = {
+  search_restaurants: "Use for: best pizza places in Saket, pure veg restaurants, Mughlai restaurants under 500 for two.",
+  search_dishes: "Use for: veg dishes under 100, costliest biryani, spicy bestsellers, dishes under 400 calories.",
+  best_dish_near_me: "Use for: best dish near Hauz Khas, top veg dish near me.",
+  weak_restaurants: "Use for: worst rated restaurants, places with few reviews.",
+  get_restaurant_details: "Use for: show the menu of a restaurant, what does it serve, its hours and fees.",
+  find_dish: "Use for: where can I get paneer tikka roll, cheapest masala dosa.",
+  restaurants_near_me: "Use for: restaurants near Cyber Hub, places within 2 km.",
+  compare_restaurants: "Use for: compare X and Y, which is better value.",
+  get_reviews: "Use for: what do people say about a restaurant, complaints, 5-star reviews.",
+  list_options: "Use for: what areas and cuisines do you cover.",
+  get_dish_details: "Use for: tell me about this dish, calories, allergens, ingredients.",
+  restaurant_offers: "Use for: offers, discounts, coupons, free delivery.",
+  dish_deals: "Use for: deals on dishes, discounted food, best value.",
+  dietary_search: "Use for: healthy, low calorie, gluten free, dairy free, nut allergy.",
+  open_now: "Use for: open now, open late, open at 11 pm, breakfast places.",
+  estimate_order: "Use for: how much will this order cost, bill for 2 dosas and a coffee.",
+  meal_for_budget: "Use for: dinner for 2 under 500, lunch for 4 within 800 rupees.",
+};
 
 export function registerTools(mcp: McpServer): void {
-  // Every tool description starts with when to use it, so the model picks these tools unprompted.
+  // Every tool description says when to use it, so the model picks these tools unprompted.
   const register = mcp.registerTool.bind(mcp) as (n: string, c: { description?: string }, h: unknown) => unknown;
   (mcp as unknown as { registerTool: typeof register }).registerTool = (n, c, h) =>
-    register(n, { ...c, description: WHEN + (c.description ?? "") + (UI_TOOLS.has(n) ? CARD : "") }, h);
+    register(n, { ...c, description: PREFIX + (c.description ?? "") + " " + (EXAMPLES[n] ?? "") + SUFFIX + (UI_TOOLS.has(n) ? CARD : "") }, h);
 
   // Registers a tool that renders in the shared UI. The model still gets the compact JSON text;
   // the UI gets structuredContent with the view name, the tool + args that produced it, and the rows.
@@ -71,9 +116,9 @@ export function registerTools(mcp: McpServer): void {
         const data = JSON.parse(res.content[0].text);
         if (data && !Array.isArray(data) && data.status === "needs_input") return res;
         const note =
-          "An interactive card already shows these results to the user. Do not list or retell the items. Reply with at most one short sentence (a pick, a caveat, or a follow-up question). Data for your reasoning: ";
+          "STOP: the user already sees all of this in an interactive card. Do NOT list, table, summarise or retell these items. Reply with at most one short sentence (one recommendation, a caveat, or a follow-up question), or nothing. Digest for your own reasoning only: ";
         return {
-          content: [{ type: "text" as const, text: note + res.content[0].text }],
+          content: [{ type: "text" as const, text: note + JSON.stringify(digest(view, data)) }],
           structuredContent: { view, tool: name, args: a, data },
         };
       },
