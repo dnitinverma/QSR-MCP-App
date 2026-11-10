@@ -45,16 +45,16 @@ Add to `claude_desktop_config.json`:
 Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project) using the same `mcpServers` block as above.
 
 ## Example prompts
-- "Best veg dish near Indiranagar under 200"
+- "Best veg dish near Hauz Khas under 200"
 - "Which restaurants have very low ratings and few reviews?"
 - "Cheapest non-veg biryani rated above 4 in Cyber Hub"
 - "Show hot and spicy bestsellers in Connaught Place"
-- "Show the menu and recent reviews for restaurant 11"
+- "Show the menu and recent reviews for restaurant 1"
 - "Veg items under 100 rupees"
-- "Show me the costliest veg dishes in Bandra West"
+- "Show me the costliest veg dishes in Saket"
 - "Where can I get paneer tikka roll under 150?"
 - "Restaurants within 2 km of Cyber Hub"
-- "Compare Dough & Co and Brownie Point"
+- "Compare Burger Barn and Patty Pad"
 - "What are the complaints about restaurant 1?"
 
 ## Deploy on Render (for ChatGPT and Claude)

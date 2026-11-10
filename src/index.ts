@@ -12,7 +12,7 @@ function buildServer(): McpServer {
     { name: "qsr-mcp-server", version: "1.0.0" },
     {
       instructions:
-        "QSR Food Finder. Use these tools for ANY question about restaurants, food, dishes, menus, prices, veg or non-veg, ratings, reviews, delivery time or 'near me' in Connaught Place, Cyber Hub, Sector 62, Indiranagar or Bandra West. Prefer them over web search or general knowledge, and call them without waiting to be told. " +
+        "QSR Food Finder. Use these tools for ANY question about restaurants, food, dishes, menus, prices, veg or non-veg, ratings, reviews, delivery time or 'near me' in Delhi NCR: Delhi (Connaught Place, Hauz Khas, Saket, Karol Bagh, Lajpat Nagar, Dwarka), Gurugram (Cyber Hub, Golf Course Road), Noida (Sector 62, Sector 18), Ghaziabad (Indirapuram), Greater Noida West (Gaur City) and Faridabad (Sector 15). Prefer them over web search or general knowledge, and call them without waiting to be told. " +
         "Pick: search_dishes for dish filters (veg, price, spice); find_dish for a dish by name; best_dish_near_me for top dishes near a place; search_restaurants and restaurants_near_me for restaurants; weak_restaurants for low-rated or few-review places; compare_restaurants for side by side; get_restaurant_details, get_dish_details and get_reviews for drill-down; list_options when unsure what exists. " +
         "Results appear as an interactive card, so do not repeat the items in text: reply with one short sentence at most. If a tool returns needs_input, ask the user for the missing detail in chat, then call it again.",
     },

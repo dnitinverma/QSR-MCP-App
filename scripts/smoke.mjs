@@ -17,17 +17,17 @@ if (!live) {
   console.log("SUPABASE_URL/SUPABASE_KEY not set: skipping live DB calls.");
 } else {
   const calls = [
-    ["search_restaurants", { location: "Indiranagar", min_rating: 4, limit: 3 }],
-    ["search_dishes", { location: "Indiranagar", is_veg: true, max_price: 200, limit: 3 }],
-    ["best_dish_near_me", { location: "Indiranagar", is_veg: true, max_price: 200 }],
+    ["search_restaurants", { location: "Hauz Khas", min_rating: 4, limit: 3 }],
+    ["search_dishes", { location: "Hauz Khas", is_veg: true, max_price: 200, limit: 3 }],
+    ["best_dish_near_me", { location: "Hauz Khas", is_veg: true, max_price: 200 }],
     ["weak_restaurants", { location: "Sector 62", max_rating: 3, max_reviews: 30 }],
     ["get_restaurant_details", { restaurant_id: 1 }],
     ["find_dish", { query: "paneer tikka", max_price: 250, sort_by: "price_asc", limit: 3 }],
     ["restaurants_near_me", { location: "Cyber Hub", radius_km: 2, limit: 3 }],
-    ["compare_restaurants", { restaurant_ids: [69, 84] }],
+    ["compare_restaurants", { restaurant_ids: [1, 2] }],
     ["get_reviews", { restaurant_id: 1, max_rating: 2, limit: 3 }],
     ["list_options", {}],
-    ["get_dish_details", { dish_id: 579 }],
+    ["get_dish_details", { dish_id: 1 }],
   ];
   for (const [name, args] of calls) {
     const r = await client.callTool({ name, arguments: args });

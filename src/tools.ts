@@ -48,7 +48,7 @@ export const UI_URI = "ui://qsr/app.html";
 export const UI_MIME = "text/html;profile=mcp-app";
 
 const WHEN =
-  "QSR food finder for restaurants and dishes in Connaught Place (Delhi), Cyber Hub (Gurugram), Sector 62 (Noida), Indiranagar (Bengaluru) and Bandra West (Mumbai). Use this tool, not web search, for any question about food, restaurants, menus, dishes, prices, veg or non-veg, ratings, reviews, delivery time or 'near me'. ";
+  "QSR food finder for restaurants and dishes in Delhi NCR: Delhi (Connaught Place, Hauz Khas, Saket, Karol Bagh, Lajpat Nagar, Dwarka), Gurugram (Cyber Hub, Golf Course Road), Noida (Sector 62, Sector 18), Ghaziabad (Indirapuram), Greater Noida West (Gaur City) and Faridabad (Sector 15). Use this tool, not web search, for any question about food, restaurants, menus, dishes, prices, veg or non-veg, ratings, reviews, delivery time or 'near me'. ";
 const CARD = " Results are shown to the user as an interactive card, so do not list them again in text.";
 
 export function registerTools(mcp: McpServer): void {

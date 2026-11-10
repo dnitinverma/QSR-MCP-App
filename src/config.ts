@@ -1,9 +1,17 @@
 export const LOCATIONS = [
   "Connaught Place",
+  "Hauz Khas",
+  "Saket",
+  "Karol Bagh",
+  "Lajpat Nagar",
+  "Dwarka",
   "Cyber Hub",
+  "Golf Course Road",
   "Sector 62",
-  "Indiranagar",
-  "Bandra West",
+  "Sector 18",
+  "Indirapuram",
+  "Gaur City",
+  "Sector 15",
 ] as const;
 
 export const CATEGORIES = [
@@ -14,6 +22,9 @@ export const CATEGORIES = [
   "Chinese",
   "Rolls & Wraps",
   "Desserts & Beverages",
+  "Momos",
+  "Chaat & Snacks",
+  "North Indian Meals",
 ] as const;
 
 export const DEFAULT_LIMIT = 10;
