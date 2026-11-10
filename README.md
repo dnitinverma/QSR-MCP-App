@@ -1,14 +1,15 @@
 # QSR MCP Server
 
-Read-only MCP server for food discovery over a Supabase (Postgres) database. Tools: `search_restaurants`, `search_dishes`, `best_dish_near_me`, `weak_restaurants`, `get_restaurant_details`, `find_dish`, `restaurants_near_me`, `compare_restaurants`, `get_reviews`, `list_options`, `get_dish_details`.
+Read-only MCP server for food discovery over a Supabase (Postgres) database. Tools: `search_restaurants`, `search_dishes`, `best_dish_near_me`, `weak_restaurants`, `get_restaurant_details`, `find_dish`, `restaurants_near_me`, `compare_restaurants`, `get_reviews`, `list_options`, `get_dish_details`, `restaurant_offers`, `dish_deals`, `dietary_search`, `open_now`, `estimate_order`, `meal_for_budget`.
 
-It is also an **MCP App**: the restaurant and dish tools render an interactive UI (`ui/app.html`, resource `ui://qsr/app.html`) in hosts that support MCP Apps. Flow: restaurant list (tick 2 to 4 to compare) > restaurant menu > dish details. Filter chips (veg, price under 100 / costly) re-run the tool from inside the card. Hosts without UI support just get the JSON text.
+It is also an **MCP App**: every tool renders a card (dish, restaurant, restaurant page, dish page, compare, bill, meal plan, reviews, options) in hosts that support MCP Apps; the restaurant and dish tools render an interactive UI (`ui/app.html`, resource `ui://qsr/app.html`) in hosts that support MCP Apps. Flow: restaurant list (tick 2 to 4 to compare) > restaurant menu > dish details. Filter chips (veg, price under 100 / costly) re-run the tool from inside the card. Hosts without UI support just get the JSON text.
 
 ## Setup
 1. Run `schema.sql` and `seed.sql` in your Supabase project (already done).
-2. Run `supabase/functions.sql` in the Supabase SQL editor (adds 5 read-only RPC functions; safe to re-run).
-3. `cp .env.example .env` and fill in the values, or export them in your shell.
-4. `npm install && npm run build`
+2. Run `supabase/migration_details.sql` (adds cuisines, hours, offers, fees, FSSAI, dish descriptions, calories, allergens and more; safe to re-run). Sample values for them come from `supabase/gen_details.py`.
+3. Run `supabase/functions.sql` in the Supabase SQL editor (adds 5 read-only RPC functions; safe to re-run).
+4. `cp .env.example .env` and fill in the values, or export them in your shell.
+5. `npm install && npm run build`
 
 ## Environment variables
 | Var | Purpose |
@@ -55,6 +56,11 @@ Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project) using the same 
 - "Where can I get paneer tikka roll under 150?"
 - "Restaurants within 2 km of Cyber Hub"
 - "Compare Burger Barn and Patty Pad"
+- "Which restaurants in Saket have free delivery or an offer?"
+- "Dairy-free veg dishes under 400 calories in Hauz Khas"
+- "What is open at 11 pm in Gaur City?"
+- "Dinner for 2 under 600 rupees in Saket"
+- "How much will 2 masala dosas and a filter coffee cost?"
 - "What are the complaints about restaurant 1?"
 
 ## Deploy on Render (for ChatGPT and Claude)
