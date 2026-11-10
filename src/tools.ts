@@ -43,10 +43,20 @@ async function locationCoords(name: string) {
   return data as { name: string; lat: number; lng: number };
 }
 
+const UI_TOOLS = new Set(["search_restaurants","search_dishes","best_dish_near_me","weak_restaurants","get_restaurant_details","find_dish","restaurants_near_me","compare_restaurants","get_dish_details"]);
 export const UI_URI = "ui://qsr/app.html";
 export const UI_MIME = "text/html;profile=mcp-app";
 
+const WHEN =
+  "QSR food finder for restaurants and dishes in Connaught Place (Delhi), Cyber Hub (Gurugram), Sector 62 (Noida), Indiranagar (Bengaluru) and Bandra West (Mumbai). Use this tool, not web search, for any question about food, restaurants, menus, dishes, prices, veg or non-veg, ratings, reviews, delivery time or 'near me'. ";
+const CARD = " Results are shown to the user as an interactive card, so do not list them again in text.";
+
 export function registerTools(mcp: McpServer): void {
+  // Every tool description starts with when to use it, so the model picks these tools unprompted.
+  const register = mcp.registerTool.bind(mcp) as (n: string, c: { description?: string }, h: unknown) => unknown;
+  (mcp as unknown as { registerTool: typeof register }).registerTool = (n, c, h) =>
+    register(n, { ...c, description: WHEN + (c.description ?? "") + (UI_TOOLS.has(n) ? CARD : "") }, h);
+
   // Registers a tool that renders in the shared UI. The model still gets the compact JSON text;
   // the UI gets structuredContent with the view name, the tool + args that produced it, and the rows.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +69,12 @@ export function registerTools(mcp: McpServer): void {
         if (res.isError) return res;
         const data = JSON.parse(res.content[0].text);
         if (data && !Array.isArray(data) && data.status === "needs_input") return res;
-        return { ...res, structuredContent: { view, tool: name, args: a, data } };
+        const note =
+          "An interactive card already shows these results to the user. Do not list or retell the items. Reply with at most one short sentence (a pick, a caveat, or a follow-up question). Data for your reasoning: ";
+        return {
+          content: [{ type: "text" as const, text: note + res.content[0].text }],
+          structuredContent: { view, tool: name, args: a, data },
+        };
       },
     );
   };
