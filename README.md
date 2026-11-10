@@ -1,6 +1,6 @@
 # QSR MCP Server
 
-Read-only MCP server for food discovery over a Supabase (Postgres) database. Tools: `search_restaurants`, `search_dishes`, `best_dish_near_me`, `weak_restaurants`, `get_restaurant_details`, `find_dish`, `restaurants_near_me`, `compare_restaurants`, `get_reviews`, `list_options`, `get_dish_details`, `restaurant_offers`, `dish_deals`, `dietary_search`, `open_now`, `estimate_order`, `meal_for_budget`.
+Read-only MCP server for food discovery over a Supabase (Postgres) database. Tools: `search_restaurants`, `search_dishes`, `best_dish_near_me`, `weak_restaurants`, `get_restaurant_details`, `find_dish`, `restaurants_near_me`, `compare_restaurants`, `get_reviews`, `list_options`, `get_dish_details`, `restaurant_offers`, `dish_deals`, `dietary_search`, `open_now`, `estimate_order`, `meal_for_budget`, `suggest_food`. Restaurant tools accept a restaurant name as well as an id.
 
 It is also an **MCP App**: every tool renders a card (dish, restaurant, restaurant page, dish page, compare, bill, meal plan, reviews, options) in hosts that support MCP Apps; the restaurant and dish tools render an interactive UI (`ui/app.html`, resource `ui://qsr/app.html`) in hosts that support MCP Apps. Flow: restaurant list (tick 2 to 4 to compare) > restaurant menu > dish details. Filter chips (veg, price under 100 / costly) re-run the tool from inside the card. Hosts without UI support just get the JSON text.
 
@@ -77,3 +77,9 @@ Connectors do not send custom headers, so the `?key=` form is the practical one.
 
 ## Test the UI locally without a host
 Run with `TRANSPORT=http`, then connect any MCP Apps host, or use the MCP Apps `basic-host` from the `modelcontextprotocol/ext-apps` repo.
+
+## Getting Claude to use the tools without being told
+The server already ships tool descriptions with example phrases, server-level instructions, titles, and read-only hints. Two things outside the server help most:
+1. After deploying, remove and re-add the connector (or start a new chat); Claude caches the tool list.
+2. Make sure the connector is switched on for the chat, and set its tools to "Always allow" in Claude's connector settings.
+3. Optional, in Claude Settings > Profile: "For questions about restaurants, dishes, menus, prices or offers in Delhi NCR areas (Saket, Hauz Khas, Gaur City, Cyber Hub...), always use the QSR Food Finder connector instead of web search."

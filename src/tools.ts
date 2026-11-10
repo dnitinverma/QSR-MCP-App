@@ -6,6 +6,30 @@ import { ask, isNeeds, type Field } from "./elicit.js";
 
 const location = z.enum(LOCATIONS).describe("Area name");
 const category = z.enum(CATEGORIES).describe("Food category");
+// Accepts a restaurant id, or a name (optionally with an area) and returns the id.
+// If a name exists in several areas, the most-reviewed one wins and the others are listed in also_in.
+async function resolveRestaurant(a: { restaurant_id?: number; restaurant_name?: string; location?: string }): Promise<{ id: number; also_in: string[] }> {
+  if (a.restaurant_id) return { id: a.restaurant_id, also_in: [] };
+  if (!a.restaurant_name) throw new Error("Give a restaurant_id or a restaurant_name.");
+  const term = a.restaurant_name.replace(/[\\%_]/g, "\\$&");
+  let q = db().from("restaurants").select("id, name, review_count, locations!inner(name)").ilike("name", `%${term}%`);
+  if (a.location) q = q.ilike("locations.name", a.location);
+  const { data, error } = await q.order("review_count", { ascending: false }).limit(10);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as unknown as { id: number; name: string; review_count: number; locations: { name: string } }[];
+  if (!rows.length) {
+    if (a.location) {
+      const { data: any_ } = await db().from("restaurants").select("name, locations!inner(name)").ilike("name", `%${term}%`).limit(10);
+      const where = [...new Set(((any_ ?? []) as unknown as { locations: { name: string } }[]).map((r) => r.locations.name))];
+      if (where.length) throw new Error(`No restaurant matching "${a.restaurant_name}" in ${a.location}. A restaurant with that name exists in: ${where.join(", ")}.`);
+    }
+    throw new Error(`No restaurant matching "${a.restaurant_name}"${a.location ? ` in ${a.location}` : ""}. Use search_restaurants to look for it.`);
+  }
+  const exact = rows.filter((r) => r.name.toLowerCase() === a.restaurant_name!.toLowerCase());
+  const pool = exact.length ? exact : rows;
+  return { id: pool[0].id, also_in: pool.slice(1).map((r) => r.locations.name) };
+}
+
 const ALLERGEN = z.enum(["gluten", "dairy", "egg", "nuts", "peanuts", "soy", "fish", "sesame"]);
 const limit = z
   .number()
@@ -44,7 +68,7 @@ async function locationCoords(name: string) {
   return data as { name: string; lat: number; lng: number };
 }
 
-const UI_TOOLS = new Set(["search_restaurants","search_dishes","best_dish_near_me","weak_restaurants","get_restaurant_details","find_dish","restaurants_near_me","compare_restaurants","get_dish_details","restaurant_offers","dish_deals","dietary_search","open_now","estimate_order","meal_for_budget","get_reviews","list_options"]);
+const UI_TOOLS = new Set(["search_restaurants","search_dishes","best_dish_near_me","weak_restaurants","get_restaurant_details","find_dish","restaurants_near_me","compare_restaurants","get_dish_details","restaurant_offers","dish_deals","dietary_search","open_now","estimate_order","meal_for_budget","get_reviews","list_options","suggest_food"]);
 // Short version of a result for the model. The card gets the full data.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function digest(view: string, data: any): unknown {
@@ -55,7 +79,7 @@ function digest(view: string, data: any): unknown {
     case "restaurants":
       return { count: data.length, items: data.map((r: any) => pick(r, ["restaurant_id", "name", "location", "rating", "review_count", "cost_for_two", "price_for_one", "delivery_fee", "offer", "opens", "closes", "distance_km"])) };
     case "restaurant":
-      return { id: data.restaurant.id, name: data.restaurant.name, rating: data.restaurant.avg_rating, menu_items: data.menu.length, sample_dishes: data.menu.slice(0, 5).map((m: any) => pick(m, ["id", "name", "price", "rating"])) };
+      return { id: data.restaurant.id, name: data.restaurant.name, ...(data.also_in ? { also_in_areas: data.also_in } : {}), rating: data.restaurant.avg_rating, menu_items: data.menu.length, sample_dishes: data.menu.slice(0, 5).map((m: any) => pick(m, ["id", "name", "price", "rating"])) };
     case "dish":
       return pick(data.dish, ["dish_id", "dish_name", "dish_price", "dish_rating", "restaurant_id", "restaurant_name", "calories", "diet"]);
     case "compare":
@@ -63,7 +87,7 @@ function digest(view: string, data: any): unknown {
     case "reviews":
       return { count: data.length, average: data.length ? +(data.reduce((t: number, x: any) => t + x.rating, 0) / data.length).toFixed(1) : null };
     case "options":
-      return { locations: data.locations.length, categories: data.categories.map((c: any) => c.name) };
+      return { ...(data.summary ? { summary: data.summary } : {}), total_restaurants: data.total_restaurants, per_area: data.locations.map((l: any) => ({ area: l.name, restaurants: l.restaurants, average_rating: l.average_rating, average_cost_for_two: l.average_cost_for_two })), cuisines: (data.cuisines ?? []).map((c: any) => c.name), categories: data.categories.map((c: any) => ({ name: c.name, restaurants: c.restaurants })) };
     default:
       return data; // bill and meals are already compact
   }
@@ -75,33 +99,51 @@ export const UI_MIME = "text/html;profile=mcp-app";
 
 const PREFIX = "QSR Food Finder: ";
 const SUFFIX =
-  " Covers Delhi NCR (Delhi, Gurugram, Noida, Ghaziabad, Greater Noida West, Faridabad). Always use this instead of web search or general knowledge for restaurant, dish, menu, price, offer or delivery questions.";
+  " This is the user's own restaurant database for Delhi NCR (Connaught Place, Hauz Khas, Saket, Karol Bagh, Lajpat Nagar, Dwarka, Cyber Hub, Golf Course Road, Sector 62, Sector 18, Indirapuram, Gaur City, Sector 15). Any question about restaurants, dishes, menus, prices, offers, delivery or how many restaurants are in those areas refers to this data, so use this tool instead of web search or general knowledge.";
 const CARD = " The result is shown to the user as an interactive card: never list or retell the results in your reply.";
+const TITLES: Record<string, string> = {
+  search_restaurants: "Find restaurants", search_dishes: "Find dishes", best_dish_near_me: "Best dishes near me", weak_restaurants: "Weakly rated restaurants",
+  get_restaurant_details: "Restaurant page and menu", find_dish: "Find a dish by name", restaurants_near_me: "Restaurants near me", compare_restaurants: "Compare restaurants",
+  get_reviews: "Restaurant reviews", list_options: "Counts and area overview", get_dish_details: "Dish details", restaurant_offers: "Offers and free delivery",
+  dish_deals: "Dish deals", dietary_search: "Healthy and allergen-free dishes", open_now: "Open now or at a time", estimate_order: "Order bill estimate",
+  meal_for_budget: "Meal for a budget", suggest_food: "What should I eat",
+};
 const EXAMPLES: Record<string, string> = {
-  search_restaurants: "Use for: best pizza places in Saket, pure veg restaurants, Mughlai restaurants under 500 for two.",
-  search_dishes: "Use for: veg dishes under 100, costliest biryani, spicy bestsellers, dishes under 400 calories.",
+  search_restaurants: "Use for: best pizza places in Saket, restaurants, cafes, eateries, joints or dhabas in an area, a restaurant by name (Burger Barn), pure veg restaurants, Mughlai restaurants under 500 for two, new restaurants, cheapest or most expensive restaurants, fastest delivery.",
+  search_dishes: "Use for: veg dishes under 100, costliest biryani, spicy bestsellers, popular or most ordered dishes, mild dishes, non-veg under 200, dishes under 400 calories, a category like momos or pizza in an area.",
   best_dish_near_me: "Use for: best dish near Hauz Khas, top veg dish near me.",
   weak_restaurants: "Use for: worst rated restaurants, places with few reviews.",
-  get_restaurant_details: "Use for: show the menu of a restaurant, what does it serve, its hours and fees.",
+  get_restaurant_details: "Use for: tell me about a restaurant by name (Dosa Dhaba), show its menu, what does it serve, is it open, its address, hours, delivery fee, minimum order, FSSAI licence.",
   find_dish: "Use for: where can I get paneer tikka roll, cheapest masala dosa.",
   restaurants_near_me: "Use for: restaurants near Cyber Hub, places within 2 km.",
-  compare_restaurants: "Use for: compare X and Y, which is better value.",
-  get_reviews: "Use for: what do people say about a restaurant, complaints, 5-star reviews.",
-  list_options: "Use for: what areas and cuisines do you cover.",
+  compare_restaurants: "Use for: compare X and Y by name, which is better value, X vs Y.",
+  get_reviews: "Use for: reviews of a restaurant by name, what do people say, complaints, 5-star reviews, is it good.",
+  list_options: "Use for: how many restaurants are in Gaur City (or any area), how many places do you have, what areas and cuisines do you cover, an overview of an area.",
   get_dish_details: "Use for: tell me about this dish, calories, allergens, ingredients.",
   restaurant_offers: "Use for: offers, discounts, coupons, free delivery.",
   dish_deals: "Use for: deals on dishes, discounted food, best value.",
   dietary_search: "Use for: healthy, low calorie, gluten free, dairy free, nut allergy.",
   open_now: "Use for: open now, open late, open at 11 pm, breakfast places.",
-  estimate_order: "Use for: how much will this order cost, bill for 2 dosas and a coffee.",
-  meal_for_budget: "Use for: dinner for 2 under 500, lunch for 4 within 800 rupees.",
+  estimate_order: "Use for: how much will this order cost, bill for 2 masala dosas and a filter coffee at Madras Cafe Co, total with delivery and GST. Works with dish and restaurant names.",
+  meal_for_budget: "Use for: dinner for 2 under 500, lunch for 4 within 800 rupees, party budget meal.",
+  suggest_food: "Use for: what should I eat, I am hungry, suggest dinner, breakfast ideas, snack, dessert, late-night food, surprise me.",
 };
 
 export function registerTools(mcp: McpServer): void {
   // Every tool description says when to use it, so the model picks these tools unprompted.
   const register = mcp.registerTool.bind(mcp) as (n: string, c: { description?: string }, h: unknown) => unknown;
   (mcp as unknown as { registerTool: typeof register }).registerTool = (n, c, h) =>
-    register(n, { ...c, description: PREFIX + (c.description ?? "") + " " + (EXAMPLES[n] ?? "") + SUFFIX + (UI_TOOLS.has(n) ? CARD : "") }, h);
+    register(
+      n,
+      {
+        ...c,
+        title: TITLES[n],
+        description: PREFIX + (c.description ?? "") + " " + (EXAMPLES[n] ?? "") + SUFFIX + (UI_TOOLS.has(n) ? CARD : ""),
+        // Read-only, closed domain: hosts can run these without a permission prompt.
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      } as { description?: string },
+      h,
+    );
 
   // Registers a tool that renders in the shared UI. The model still gets the compact JSON text;
   // the UI gets structuredContent with the view name, the tool + args that produced it, and the rows.
@@ -139,6 +181,7 @@ export function registerTools(mcp: McpServer): void {
         min_price: z.number().int().min(0).optional().describe("Min INR price for one person (premium places)"),
         max_price: z.number().int().positive().optional().describe("Max INR price for one person"),
         veg_only: z.boolean().optional().describe("Only pure-veg restaurants"),
+        name: z.string().trim().min(2).max(60).optional().describe("Restaurant name or part of it, e.g. Burger Barn"),
         cuisine: z.string().trim().min(2).max(40).optional().describe("Cuisine tag, e.g. Mughlai, Tibetan, Kebabs, Punjabi, Italian, Street Food"),
         max_cost_for_two: z.number().int().positive().optional().describe("Max INR cost for two people"),
         has_offer: z.boolean().optional().describe("Only restaurants with a current offer"),
@@ -162,6 +205,7 @@ export function registerTools(mcp: McpServer): void {
             p_min_price: a.min_price ?? null,
             p_max_price: a.max_price ?? null,
             p_veg_only: a.veg_only ?? false,
+            p_name: a.name ?? null,
             p_cuisine: a.cuisine ?? null,
             p_max_cost_for_two: a.max_cost_for_two ?? null,
             p_has_offer: a.has_offer ?? false,
@@ -314,14 +358,19 @@ export function registerTools(mcp: McpServer): void {
       description:
         "Full restaurant page: cuisines, address, cost for two, delivery fee, packaging charge, minimum order, offer, opening hours, FSSAI licence, badges, then the menu by section. Each dish has description, price and MRP, calories, serves, allergens, rating, rating count and any reviews; the restaurant has rating, review count and its 5 most recent reviews. Set veg_only to hide non-veg dishes. Read-only.",
       inputSchema: {
-        restaurant_id: z.number().int().positive(),
+        restaurant_id: z.number().int().positive().optional(),
+        restaurant_name: z.string().trim().min(2).max(60).optional().describe("Restaurant name, e.g. Dosa Dhaba (use instead of the id)"),
+        location: location.optional().describe("Area, to pick the right branch when a name exists in several areas"),
         veg_only: z.boolean().optional().describe("Only veg dishes in the menu"),
         min_price: z.number().int().min(0).optional(),
         max_price: z.number().int().positive().optional(),
       },
     },
-    async ({ restaurant_id, veg_only, min_price, max_price }) => {
+    async (a0) => {
       try {
+        const { id: restaurant_id, also_in } = await resolveRestaurant(a0);
+        a0.restaurant_id = restaurant_id;
+        const { veg_only, min_price, max_price } = a0;
         let dq = db()
           .from("dishes")
           .select("id, name, description, menu_section, price, mrp, rating, rating_count, is_veg, is_egg, is_bestseller, is_must_try, spice_level, calories, serves, portion, allergens, prep_time_min, is_available")
@@ -356,6 +405,7 @@ export function registerTools(mcp: McpServer): void {
         }));
         return json({
           restaurant: r.data,
+          ...(also_in.length ? { also_in } : {}),
           menu,
           recent_reviews: reviews.slice(0, 5).map(({ reviewer, rating, comment, created_at }) => ({
             reviewer, rating, comment, created_at,
@@ -451,12 +501,20 @@ export function registerTools(mcp: McpServer): void {
       description:
         "Side-by-side comparison of 2 to 4 restaurants (rating, reviews, price, cost for two, delivery time and fee, offer, hours, cuisines, veg, open) plus each one's top-rated dishes. Get ids from other tools. Read-only.",
       inputSchema: {
-        restaurant_ids: z.array(z.number().int().positive()).min(2).max(4),
+        restaurant_ids: z.array(z.number().int().positive()).min(2).max(4).optional(),
+        restaurant_names: z.array(z.string().trim().min(2).max(60)).min(2).max(4).optional().describe("Restaurant names (use instead of ids)"),
+        location: location.optional().describe("Area, to pick the right branch of each name"),
         veg_only: z.boolean().optional().describe("Only compare veg dishes"),
       },
     },
-    async ({ restaurant_ids, veg_only }) => {
+    async (a0) => {
       try {
+        const veg_only = a0.veg_only;
+        const restaurant_ids: number[] = [...new Set<number>(
+          a0.restaurant_ids ?? (await Promise.all((a0.restaurant_names ?? []).map((n: string) => resolveRestaurant({ restaurant_name: n, location: a0.location })))).map((r) => r.id),
+        )];
+        if (restaurant_ids.length < 2) throw new Error("Give 2 to 4 different restaurants (ids or names).");
+        a0.restaurant_ids = restaurant_ids;
         const [r, d] = await Promise.all([
           db()
             .from("restaurants")
@@ -488,7 +546,9 @@ export function registerTools(mcp: McpServer): void {
       description:
         "Customer reviews for one restaurant, newest first. Set max_rating (e.g. 2) to see complaints or min_rating (e.g. 4) to see praise. Read-only.",
       inputSchema: {
-        restaurant_id: z.number().int().positive(),
+        restaurant_id: z.number().int().positive().optional(),
+        restaurant_name: z.string().trim().min(2).max(60).optional().describe("Restaurant name (use instead of the id)"),
+        location: location.optional().describe("Area, to pick the right branch"),
         min_rating: z.number().int().min(1).max(5).optional(),
         max_rating: z.number().int().min(1).max(5).optional(),
         limit,
@@ -496,10 +556,12 @@ export function registerTools(mcp: McpServer): void {
     },
     async (a) => {
       try {
+        const { id } = await resolveRestaurant(a);
+        a.restaurant_id = id;
         let q = db()
           .from("reviews")
           .select("reviewer, rating, comment, created_at, dishes(name)")
-          .eq("restaurant_id", a.restaurant_id);
+          .eq("restaurant_id", id);
         if (a.min_rating !== undefined) q = q.gte("rating", a.min_rating);
         if (a.max_rating !== undefined) q = q.lte("rating", a.max_rating);
         const { data, error } = await q.order("created_at", { ascending: false }).limit(a.limit);
@@ -514,29 +576,61 @@ export function registerTools(mcp: McpServer): void {
   reg("list_options", "options",
     {
       description:
-        "Lists the supported locations (with city and coordinates), food categories, and the number of restaurants in each. Use first when unsure what can be searched. Read-only.",
-      inputSchema: {},
+        "Counts and overview: how many restaurants there are in an area, in each area, in each food type and cuisine, which area has the best average rating or lowest cost, plus the supported areas and categories. Pass location for one area's overview (restaurant count, average rating, price range for two, pure-veg places, places with offers or free delivery, food types). Read-only.",
+      inputSchema: { location: location.optional().describe("Area for a single-area overview") },
     },
-    async () => {
+    async (a) => {
       try {
-        const { data, error } = await db()
+        let q = db()
           .from("restaurants")
-          .select("locations(name, city, lat, lng), categories(name)");
+          .select(
+            "avg_rating, cost_for_two, is_pure_veg, is_open, offer_text, delivery_fee, cuisines, locations!inner(name, city, lat, lng), categories(name)",
+          );
+        if (a.location) q = q.ilike("locations.name", a.location);
+        const { data, error } = await q;
         if (error) throw new Error(error.message);
-        const locs = new Map<string, { name: string; city: string; lat: number; lng: number; restaurants: number }>();
+        type Row = {
+          avg_rating: number; cost_for_two: number | null; is_pure_veg: boolean; is_open: boolean; offer_text: string | null; delivery_fee: number | null; cuisines: string[] | null;
+          locations: { name: string; city: string; lat: number; lng: number }; categories: { name: string };
+        };
+        const rows = (data ?? []) as unknown as Row[];
+        const locs = new Map<string, { name: string; city: string; lat: number; lng: number; restaurants: number; rating_sum: number; cost_sum: number }>();
         const cats = new Map<string, number>();
-        for (const row of (data ?? []) as unknown as {
-          locations: { name: string; city: string; lat: number; lng: number };
-          categories: { name: string };
-        }[]) {
-          const l = locs.get(row.locations.name) ?? { ...row.locations, restaurants: 0 };
+        const cuis = new Map<string, number>();
+        for (const row of rows) {
+          const l = locs.get(row.locations.name) ?? { ...row.locations, restaurants: 0, rating_sum: 0, cost_sum: 0 };
           l.restaurants++;
+          l.rating_sum += row.avg_rating;
+          l.cost_sum += row.cost_for_two ?? 0;
           locs.set(row.locations.name, l);
           cats.set(row.categories.name, (cats.get(row.categories.name) ?? 0) + 1);
+          for (const c of row.cuisines ?? []) cuis.set(c, (cuis.get(c) ?? 0) + 1);
         }
+        const costs = rows.map((r) => r.cost_for_two).filter((c): c is number => c != null);
+        const summary = a.location
+          ? {
+              area: a.location,
+              city: rows[0]?.locations.city ?? null,
+              restaurants: rows.length,
+              marked_open: rows.filter((r) => r.is_open).length,
+              average_rating: rows.length ? Math.round((rows.reduce((t, r) => t + r.avg_rating, 0) / rows.length) * 10) / 10 : null,
+              cost_for_two_min: costs.length ? Math.min(...costs) : null,
+              cost_for_two_max: costs.length ? Math.max(...costs) : null,
+              pure_veg: rows.filter((r) => r.is_pure_veg).length,
+              with_offers: rows.filter((r) => r.offer_text).length,
+              free_delivery: rows.filter((r) => r.delivery_fee === 0).length,
+            }
+          : null;
         return json({
-          locations: [...locs.values()],
+          ...(summary ? { summary } : {}),
+          total_restaurants: rows.length,
+          locations: [...locs.values()].map(({ rating_sum, cost_sum, ...l }) => ({
+            ...l,
+            average_rating: Math.round((rating_sum / l.restaurants) * 10) / 10,
+            average_cost_for_two: Math.round(cost_sum / l.restaurants),
+          })),
           categories: [...cats].map(([name, restaurants]) => ({ name, restaurants })),
+          cuisines: [...cuis].sort((x, y) => y[1] - x[1]).map(([name, restaurants]) => ({ name, restaurants })),
         });
       } catch (e) {
         return fail(e);
@@ -722,39 +816,58 @@ export function registerTools(mcp: McpServer): void {
   reg("estimate_order", "bill",
     {
       description:
-        "Price an order: item total, packaging charge, delivery fee, 5% GST and grand total, plus whether the restaurant's minimum order is met. All dishes must be from one restaurant. Use for 'how much will this cost', 'bill for 2 masala dosa and a coffee'. Read-only; nothing is ordered.",
+        "Price an order: item total, packaging charge, delivery fee, 5% GST and grand total, plus whether the restaurant's minimum order is met. All dishes must be from one restaurant. Identify dishes by dish_id or by dish_name together with the restaurant (restaurant_id, or restaurant_name and optionally location). Read-only; nothing is ordered.",
       inputSchema: {
+        restaurant_id: z.number().int().positive().optional(),
+        restaurant_name: z.string().trim().min(2).max(60).optional().describe("Restaurant name, e.g. Madras Cafe Co"),
+        location: location.optional().describe("Area, to pick the right branch"),
         items: z
-          .array(z.object({ dish_id: z.number().int().positive(), quantity: z.number().int().min(1).max(20).default(1) }))
+          .array(
+            z.object({
+              dish_id: z.number().int().positive().optional(),
+              dish_name: z.string().trim().min(2).max(60).optional().describe("Dish name, e.g. Masala Dosa"),
+              quantity: z.number().int().min(1).max(20).default(1),
+            }),
+          )
           .min(1)
           .max(15),
       },
     },
-    async ({ items }: { items: { dish_id: number; quantity: number }[] }) => {
+    async (a: { restaurant_id?: number; restaurant_name?: string; location?: string; items: { dish_id?: number; dish_name?: string; quantity: number }[] }) => {
       try {
-        const ids = [...new Set(items.map((i) => i.dish_id))];
-        const { data, error } = await db()
-          .from("dishes")
-          .select(
-            "id, name, price, is_veg, is_available, restaurant_id, restaurants(id, name, packaging_charge, delivery_fee, min_order_amount, offer_text, delivery_time_min, is_open)",
-          )
-          .in("id", ids);
-        if (error) throw new Error(error.message);
+        const ctx = a.restaurant_id || a.restaurant_name ? await resolveRestaurant(a) : null;
+        const select =
+          "id, name, price, is_veg, is_available, restaurant_id, restaurants(id, name, packaging_charge, delivery_fee, min_order_amount, offer_text, delivery_time_min, is_open)";
         type Row = {
           id: number; name: string; price: number; is_veg: boolean; is_available: boolean; restaurant_id: number;
           restaurants: { id: number; name: string; packaging_charge: number; delivery_fee: number; min_order_amount: number; offer_text: string | null; delivery_time_min: number; is_open: boolean };
         };
-        const rows = (data ?? []) as unknown as Row[];
-        const missing = ids.filter((id) => !rows.some((r) => r.id === id));
-        if (missing.length) throw new Error(`Dish not found: ${missing.join(", ")}`);
-        const rids = new Set(rows.map((r) => r.restaurant_id));
+        const resolved: { row: Row; quantity: number }[] = [];
+        for (const it of a.items) {
+          if (!it.dish_id && !it.dish_name) throw new Error("Each item needs a dish_id or a dish_name.");
+          let q = db().from("dishes").select(select);
+          if (it.dish_id) q = q.eq("id", it.dish_id);
+          else {
+            if (!ctx) throw new Error("To order by dish name, also give the restaurant_name (and location if the name is in several areas).");
+            const term = it.dish_name!.replace(/[\\%_]/g, "\\$&");
+            q = q.eq("restaurant_id", ctx.id).ilike("name", `%${term}%`);
+          }
+          const { data, error } = await q.order("rating", { ascending: false }).limit(10);
+          if (error) throw new Error(error.message);
+          const found = (data ?? []) as unknown as Row[];
+          if (!found.length) throw new Error(it.dish_id ? `Dish not found: ${it.dish_id}` : `No dish matching "${it.dish_name}" at that restaurant. Use get_restaurant_details to see the menu.`);
+          const exact = found.find((r) => r.name.toLowerCase() === (it.dish_name ?? "").toLowerCase());
+          resolved.push({ row: exact ?? found[0], quantity: it.quantity });
+        }
+        const rids = new Set(resolved.map((r) => r.row.restaurant_id));
         if (rids.size > 1) throw new Error("These dishes are from different restaurants. Pick dishes from one restaurant per order.");
-        const rest = rows[0].restaurants;
-        const unavailable = rows.filter((r) => !r.is_available).map((r) => r.name);
-        const lines = items.map((i) => {
-          const d = rows.find((r) => r.id === i.dish_id)!;
-          return { dish_id: d.id, name: d.name, is_veg: d.is_veg, quantity: i.quantity, unit_price: d.price, line_total: d.price * i.quantity };
-        });
+        const rest = resolved[0].row.restaurants;
+        const merged = new Map<number, { row: Row; quantity: number }>();
+        for (const r of resolved) merged.set(r.row.id, { row: r.row, quantity: (merged.get(r.row.id)?.quantity ?? 0) + r.quantity });
+        const lines = [...merged.values()].map(({ row: d, quantity }) => ({
+          dish_id: d.id, name: d.name, is_veg: d.is_veg, quantity, unit_price: d.price, line_total: d.price * quantity,
+        }));
+        const unavailable = [...merged.values()].filter((m) => !m.row.is_available).map((m) => m.row.name);
         const itemTotal = lines.reduce((t, l) => t + l.line_total, 0);
         const gst = Math.round(itemTotal * 0.05);
         const total = itemTotal + rest.packaging_charge + rest.delivery_fee + gst;
@@ -762,6 +875,7 @@ export function registerTools(mcp: McpServer): void {
         if (rest.offer_text) notes.push(`Restaurant offer (not applied): ${rest.offer_text}.`);
         if (!rest.is_open) notes.push("This restaurant is currently closed.");
         if (unavailable.length) notes.push(`Currently unavailable: ${unavailable.join(", ")}.`);
+        if (ctx?.also_in.length) notes.push(`Priced at the most-reviewed branch. The same name also exists in: ${ctx.also_in.join(", ")}.`);
         return json({
           restaurant: { id: rest.id, name: rest.name, delivery_time_min: rest.delivery_time_min, is_open: rest.is_open },
           lines,
@@ -847,6 +961,55 @@ export function registerTools(mcp: McpServer): void {
         }
         combos.sort((x, y) => y.score - x.score);
         return json(combos.slice(0, 3).map(({ score: _s, ...c }) => ({ ...c, people: a.people, budget: a.budget })));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  reg("suggest_food", "dishes",
+    {
+      description:
+        "Suggest what to eat for a moment of the day or a mood: breakfast, lunch, dinner, snack, dessert, late-night or party food. Returns top-rated dishes from fitting food types, optionally veg only, under a price, in an area. Use when the user is hungry or undecided. Read-only.",
+      inputSchema: {
+        occasion: z.enum(["breakfast", "lunch", "dinner", "snack", "dessert", "late-night", "party"]).default("dinner"),
+        location: location.optional(),
+        is_veg: z.boolean().optional().describe("true = veg only, false = non-veg only"),
+        min_price: z.number().int().min(0).optional().describe("Min dish price in INR"),
+        max_price: z.number().int().positive().optional().describe("Max dish price in INR"),
+        limit,
+      },
+    },
+    async (a) => {
+      try {
+        const PLAN: Record<string, string[]> = {
+          breakfast: ["South Indian", "North Indian Meals", "Chaat & Snacks"],
+          lunch: ["North Indian Meals", "Biryani", "South Indian", "Chinese"],
+          dinner: ["Biryani", "North Indian Meals", "Pizza", "Chinese"],
+          snack: ["Momos", "Chaat & Snacks", "Burgers", "Rolls & Wraps"],
+          dessert: ["Desserts & Beverages"],
+          "late-night": ["Burgers", "Pizza", "Rolls & Wraps", "Momos", "Biryani"],
+          party: ["Pizza", "Biryani", "Chinese", "Burgers"],
+        };
+        const batches = await Promise.all(
+          PLAN[a.occasion].map((c) =>
+            rpc("rpc_search_dishes", {
+              p_location: a.location ?? null,
+              p_category: c,
+              p_is_veg: a.is_veg ?? null,
+              p_min_price: a.min_price ?? null,
+              p_max_price: a.max_price ?? null,
+              p_min_rating: 4,
+              p_sort_by: "rating",
+              p_limit: 12,
+            }),
+          ),
+        );
+        const rows = (batches.flat() as { dish_id: number; rating: number; rating_count: number }[])
+          .sort((x, y) => y.rating - x.rating || y.rating_count - x.rating_count)
+          .filter((r, i, all) => all.findIndex((o) => o.dish_id === r.dish_id) === i)
+          .slice(0, a.limit);
+        return json(rows);
       } catch (e) {
         return fail(e);
       }

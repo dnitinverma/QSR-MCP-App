@@ -10,6 +10,7 @@ drop function if exists rpc_search_dishes(text, text, boolean, int, numeric, tex
 drop function if exists rpc_best_dishes_near(double precision, double precision, double precision, boolean, int, int);
 drop function if exists rpc_best_dishes_near(double precision, double precision, double precision, boolean, int, int, int);
 drop function if exists rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean);
+drop function if exists rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean, text, int);
 drop function if exists rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text);
 drop function if exists rpc_restaurants_near(double precision, double precision, double precision, text, numeric, int, boolean, int);
 
@@ -28,7 +29,8 @@ create or replace function rpc_search_restaurants(
   p_has_offer boolean default false,
   p_free_delivery boolean default false,
   p_cuisine text default null,
-  p_max_cost_for_two int default null
+  p_max_cost_for_two int default null,
+  p_name text default null
 )
 returns table (
   restaurant_id int, name text, category text, cuisines text[], location text, city text, address text,
@@ -61,6 +63,8 @@ language sql stable security invoker as $$
     and (not coalesce(p_free_delivery, false) or r.delivery_fee = 0)
     and (p_cuisine is null or exists (select 1 from unnest(r.cuisines) cu where cu ilike p_cuisine))
     and (p_max_cost_for_two is null or r.cost_for_two <= p_max_cost_for_two)
+    and (p_name is null or r.name ilike
+         '%' || replace(replace(replace(p_name, '\', '\\'), '%', '\%'), '_', '\_') || '%')
   order by
     case when p_sort_by = 'rating'        then r.avg_rating end desc nulls last,
     case when p_sort_by = 'reviews'       then r.review_count end desc nulls last,
@@ -266,7 +270,7 @@ language sql stable security invoker as $$
 $$;
 
 grant execute on function
-  rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean, text, int),
+  rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean, text, int, text),
   rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text[]),
   rpc_open_restaurants(text, text, text, int),
   rpc_best_dishes_near(double precision, double precision, double precision, boolean, int, int, int),

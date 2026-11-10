@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const EXPECTED = ["search_restaurants", "search_dishes", "best_dish_near_me", "weak_restaurants", "get_restaurant_details", "find_dish", "restaurants_near_me", "compare_restaurants", "get_reviews", "list_options", "get_dish_details", "restaurant_offers", "dish_deals", "dietary_search", "open_now", "estimate_order", "meal_for_budget"];
+const EXPECTED = ["search_restaurants", "search_dishes", "best_dish_near_me", "weak_restaurants", "get_restaurant_details", "find_dish", "restaurants_near_me", "compare_restaurants", "get_reviews", "list_options", "get_dish_details", "restaurant_offers", "dish_deals", "dietary_search", "open_now", "estimate_order", "meal_for_budget", "suggest_food"];
 const live = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_KEY);
 
 const client = new Client({ name: "smoke", version: "1.0.0" });
@@ -33,6 +33,7 @@ if (!live) {
     ["dietary_search", { location: "Saket", max_calories: 400, avoid_allergens: ["dairy"], limit: 3 }],
     ["open_now", { location: "Saket", at: "23:00", limit: 3 }],
     ["estimate_order", { items: [{ dish_id: 1, quantity: 2 }] }],
+    ["suggest_food", { occasion: "dinner", location: "Saket" }],
     ["meal_for_budget", { people: 2, budget: 700, location: "Saket" }],
   ];
   for (const [name, args] of calls) {

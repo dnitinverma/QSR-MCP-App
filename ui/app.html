@@ -293,7 +293,7 @@
     for (var i = 0; i < PRICE.length; i++) if (PRICE[i].min === mn && PRICE[i].max === mx) return PRICE[i].k;
     return "any";
   }
-  var DISH_TOOLS = { search_dishes: 1, find_dish: 1, best_dish_near_me: 1, get_restaurant_details: 1, dish_deals: 1, dietary_search: 1 };
+  var DISH_TOOLS = { search_dishes: 1, find_dish: 1, best_dish_near_me: 1, get_restaurant_details: 1, dish_deals: 1, dietary_search: 1, suggest_food: 1 };
   var PURE_VEG_TOOLS = { search_restaurants: 1, restaurants_near_me: 1, restaurant_offers: 1 };
   function withDiet(args, tool, diet) {
     var a = Object.assign({}, args);
@@ -431,11 +431,12 @@
       case "bill": return "Order estimate";
       case "meals": return plural(n, "meal idea", "meal ideas") + " for " + plural(a.people || 2, "person", "people") + " within " + rs(a.budget);
       case "reviews": return plural(n, "review", "reviews");
-      case "options": return "What you can search";
+      case "options": return (cur.args && cur.args.location) ? (cur.args.location + " at a glance") : plural(d.total_restaurants || 0, "restaurant", "restaurants") + " across " + plural((d.locations || []).length, "area", "areas");
       case "compare": return "Compare restaurants";
       case "restaurant": return d.restaurant.name;
       case "dish": return d.dish.dish_name;
     }
+    if (cur.tool === "suggest_food") return plural(n, "dish idea", "dish ideas") + " for " + (a.occasion || "dinner") + loc;
     if (cur.tool === "dish_deals") return plural(n, "dish", "dishes") + " on discount" + loc;
     if (cur.tool === "dietary_search") {
       var t0 = plural(n, "dish", "dishes");
@@ -609,14 +610,24 @@
   var CAT_EMOJI_TEXT = { "Burgers": "burger", "Pizza": "pizza", "Biryani": "biryani", "South Indian": "dosa", "Chinese": "noodle", "Rolls & Wraps": "roll", "Desserts & Beverages": "dessert", "Momos": "momo", "Chaat & Snacks": "chaat", "North Indian Meals": "thali" };
   function viewOptions() {
     var o = cur.data, cities = [], by = {};
+    var sm = o.summary, head = "";
+    if (sm) {
+      head = '<div class="card hero"><div class="head"><div class="tile big" style="--h:' + hue(sm.area) + '">\uD83D\uDCCD</div><div class="grow"><div class="name xl">' + esc(sm.area) + '</div><div class="meta">' + esc(sm.city || "") + '</div>' +
+        '<div style="margin-top:6px"><span class="c"><b class="num">' + sm.restaurants + '</b> restaurants</span> ' + rt(sm.average_rating) + '</div></div></div>' +
+        '<div class="grid4"><div class="stat"><div class="l">For two</div><div class="v num">' + rs(sm.cost_for_two_min) + " to " + rs(sm.cost_for_two_max) + '</div></div>' +
+        '<div class="stat"><div class="l">Pure veg</div><div class="v num">' + sm.pure_veg + '</div></div>' +
+        '<div class="stat"><div class="l">With offers</div><div class="v num">' + sm.with_offers + '</div></div>' +
+        '<div class="stat"><div class="l">Free delivery</div><div class="v num">' + sm.free_delivery + '</div></div></div>' +
+        '<button class="link" data-act="loc" data-val="' + esc(sm.area) + '">Browse restaurants in ' + esc(sm.area) + '</button></div>';
+    }
     (o.locations || []).forEach(function (l) { if (!by[l.city]) { by[l.city] = []; cities.push(l.city); } by[l.city].push(l); });
-    var h = '<div class="sec" style="margin-top:4px"><h2>Areas</h2><small>Tap one to see its restaurants</small></div>';
-    cities.forEach(function (c) {
+    var h = sm ? head : '<div class="sec" style="margin-top:4px"><h2>Areas</h2><small>Tap one to see its restaurants</small></div>';
+    if (!sm) cities.forEach(function (c) {
       h += '<h3 class="sub">' + esc(c) + '</h3><div class="opts">' + by[c].map(function (l) {
-        return '<button class="tilebtn" data-act="loc" data-val="' + esc(l.name) + '"><div class="tile" style="--h:' + hue(l.name) + '">📍</div><div><div class="name" style="font-size:15px">' + esc(l.name) + '</div><div class="meta num">' + l.restaurants + " restaurants</div></div></button>";
+        return '<button class="tilebtn" data-act="loc" data-val="' + esc(l.name) + '"><div class="tile" style="--h:' + hue(l.name) + '">📍</div><div><div class="name" style="font-size:15px">' + esc(l.name) + '</div><div class="meta num">' + l.restaurants + " restaurants" + (l.average_rating ? ", " + l.average_rating + " avg" : "") + '</div></div></button>';
       }).join("") + "</div>";
     });
-    h += '<div class="sec"><h2>Food types</h2><small>Tap one to browse</small></div><div class="opts">' + (o.categories || []).map(function (c) {
+    h += '<div class="sec"><h2>Food types</h2><small>' + (sm ? "Restaurants in " + esc(sm.area) : "Tap one to browse") + '</small></div><div class="opts">' + (o.categories || []).map(function (c) {
       return '<button class="tilebtn" data-act="cat" data-val="' + esc(c.name) + '"><div class="tile" style="--h:' + hue(emo(CAT_EMOJI_TEXT[c.name] || c.name)) + '">' + emo(CAT_EMOJI_TEXT[c.name] || c.name) + '</div><div><div class="name" style="font-size:15px">' + esc(c.name) + '</div><div class="meta num">' + c.restaurants + " restaurants</div></div></button>";
     }).join("") + "</div>";
     return h;
