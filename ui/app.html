@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QSR Food Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper: light-dark(#eef1f4, #121722);
+    --ink: light-dark(#17202e, #e9edf3);
+    --muted: light-dark(#566275, #93a0b5);
+    --rule: light-dark(#b7c0cd, #3a455a);
+    --wash: light-dark(#e1e6ec, #1b2231);
+    --gold: light-dark(#e8a200, #f5b82e);
+    --veg: #1e8a4c;
+    --nonveg: #c8342e;
+    --action: light-dark(#0b6e69, #4cc9c0);
+    --best: light-dark(#fbe9b4, #4a3a0c);
+    --font: "Bricolage Grotesque", var(--font-sans, ui-rounded), "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--paper); color: var(--ink); font: 400 14px/1.45 var(--font); }
+  body { padding: 14px 16px 18px; max-width: 760px; }
+  button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; text-align: left; }
+  :focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: 3px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  h1, h2 { margin: 0; }
+  .num { font-variant-numeric: tabular-nums lining-nums; }
+
+  /* header */
+  .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .head h1 { flex: 1; font-size: 21px; line-height: 1.2; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+  .back { color: var(--action); font-weight: 500; white-space: nowrap; }
+  .back:hover { text-decoration: underline; }
+
+  /* filters */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 0 10px; margin-bottom: 4px; border-bottom: 2px solid var(--ink); }
+  .field { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .field > label, .field > .lab { color: var(--muted); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 6px; overflow: hidden; }
+  .seg button { padding: 3px 10px; font-weight: 500; border-right: 1.5px solid var(--ink); display: inline-flex; align-items: center; gap: 5px; }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  select { font: inherit; color: var(--ink); background: transparent; border: 1.5px solid var(--ink); border-radius: 6px; padding: 3px 6px; }
+
+  /* veg / non-veg mark (square with dot, as on Indian food packaging) */
+  .mark { display: inline-block; flex: none; width: 13px; height: 13px; border: 1.5px solid currentColor; border-radius: 2px; position: relative; }
+  .mark::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: currentColor; }
+  .mark.veg { color: var(--veg); } .mark.nonveg { color: var(--nonveg); }
+  .seg button[aria-pressed="true"] .mark { color: inherit; }
+
+  /* menu rows */
+  .item { position: relative; padding: 11px 0 11px; border-bottom: 1px dotted var(--rule); }
+  .item:hover { background: var(--wash); }
+  .line { display: flex; align-items: baseline; gap: 8px; }
+  .line .mark { align-self: center; }
+  .open { font-weight: 700; font-size: 16px; line-height: 1.25; }
+  .open::after { content: ""; position: absolute; inset: 0; }
+  .leader { flex: 1; min-width: 12px; border-bottom: 2px dotted var(--muted); opacity: .6; transform: translateY(-3px); }
+  .amt { font-weight: 800; font-size: 17px; white-space: nowrap; }
+  .amt small { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); text-align: right; line-height: 1.1; }
+  .where { color: var(--muted); margin-top: 1px; }
+  .rates { display: flex; flex-wrap: wrap; gap: 2px 18px; margin-top: 5px; align-items: center; }
+  .rate { display: inline-flex; align-items: center; gap: 6px; }
+  .rate .who { color: var(--muted); font-size: 12.5px; }
+  .score b { font-weight: 800; font-size: 14px; }
+  .bar { display: inline-block; width: 44px; height: 5px; background: var(--rule); border-radius: 1px; vertical-align: middle; margin-left: 6px; position: relative; overflow: hidden; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: var(--gold); }
+  .rate .n { color: var(--muted); font-size: 12.5px; }
+  .quote { margin: 6px 0 0; padding-left: 10px; border-left: 3px solid var(--gold); color: var(--muted); font-style: italic; max-width: 62ch; }
+  .quote cite { font-style: normal; }
+  .tag { font-size: 11.5px; font-weight: 500; padding: 0 5px; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); white-space: nowrap; }
+  .tag.hot { border-color: var(--gold); color: var(--ink); background: var(--best); }
+  .tag.off { border-color: var(--nonveg); color: var(--nonveg); }
+  .aux { position: relative; z-index: 1; color: var(--action); font-weight: 500; margin-top: 5px; display: inline-block; }
+  .aux:hover { text-decoration: underline; }
+  .pick { position: relative; z-index: 1; accent-color: var(--action); width: 16px; height: 16px; margin: 0 2px 0 0; align-self: center; }
+
+  /* restaurant signboard */
+  .board { border: 2px solid var(--ink); border-radius: 4px; margin-bottom: 14px; }
+  .board .title { padding: 10px 12px 8px; }
+  .board h2 { font-size: 24px; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 2px solid var(--ink); }
+  .stat { padding: 7px 12px 8px; border-right: 1px solid var(--rule); }
+  .stat:last-child { border-right: 0; }
+  .stat .lab { color: var(--muted); font-size: 12px; }
+  .stat .val { font-weight: 800; font-size: 16px; }
+  .stat .val .hint { font-weight: 400; display: block; }
+  .sect { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 0 2px; font-size: 16px; font-weight: 800; }
+  .sect small { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+  .bigprice { font-weight: 800; font-size: 30px; line-height: 1; }
+
+  /* compare */
+  .cmp { width: 100%; border-collapse: collapse; border: 2px solid var(--ink); border-radius: 6px; }
+  .cmp th, .cmp td { text-align: left; vertical-align: top; padding: 7px 9px; border-bottom: 1px solid var(--rule); }
+  .cmp thead th { border-bottom: 2px solid var(--ink); font-size: 15px; }
+  .cmp th[scope=row] { color: var(--muted); font-weight: 400; width: 24%; }
+  .cmp td.best { background: var(--best); font-weight: 800; }
+  .cmp .dishline { display: flex; gap: 6px; align-items: baseline; margin-bottom: 3px; }
+
+  /* actions */
+  .dock { position: sticky; bottom: 0; background: var(--paper); padding: 10px 0 2px; display: flex; align-items: center; gap: 10px; border-top: 2px solid var(--ink); margin-top: 6px; }
+  .go { background: var(--ink); color: var(--paper); border-radius: 6px; padding: 6px 14px; font-weight: 700; }
+  .go:disabled { opacity: .4; cursor: default; }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  .empty { padding: 22px 0; max-width: 46ch; }
+  .empty b { display: block; font-size: 16px; margin-bottom: 2px; }
+  .note { padding: 8px 10px; border-left: 3px solid var(--nonveg); background: var(--wash); margin-bottom: 10px; }
+  [aria-busy="true"] { opacity: .5; pointer-events: none; }
+
+  .enter .item, .enter .board, .enter .cmp { animation: rise .28s ease-out both; }
+  .enter .item:nth-child(2) { animation-delay: .04s; } .enter .item:nth-child(3) { animation-delay: .08s; }
+  .enter .item:nth-child(4) { animation-delay: .12s; } .enter .item:nth-child(5) { animation-delay: .16s; }
+  .enter .item:nth-child(n+6) { animation-delay: .2s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .enter .item, .enter .board, .enter .cmp { animation: none; } }
+  @media (max-width: 380px) { .head h1 { font-size: 18px; } .board h2 { font-size: 20px; } .stat { padding: 6px 7px; } .stat .val { font-size: 15px; } .stat .bar { display: none; } .seg button { padding: 3px 7px; } }
+</style>
+</head>
+<body>
+<div id="app"><p class="hint">Loading results…</p></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- host bridge (MCP Apps: JSON-RPC over postMessage) ---------- */
+  var nextId = 1, pending = {};
+  function post(msg) { window.parent.postMessage(msg, "*"); }
+  function request(method, params) {
+    return new Promise(function (resolve, reject) {
+      var id = nextId++;
+      pending[id] = { resolve: resolve, reject: reject };
+      post({ jsonrpc: "2.0", id: id, method: method, params: params });
+    });
+  }
+  function notify(method, params) { post({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  window.addEventListener("message", function (e) {
+    var m = e.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && !m.method) {
+      var p = pending[m.id];
+      if (!p) return;
+      delete pending[m.id];
+      if (m.error) p.reject(new Error(m.error.message || "Request failed")); else p.resolve(m.result);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-result") onToolResult(m.params);
+    else if (m.method === "ui/notifications/host-context-changed") applyContext(m.params);
+    else if (m.method === "ui/resource-teardown" && m.id !== undefined) post({ jsonrpc: "2.0", id: m.id, result: {} });
+  });
+
+  function applyContext(ctx) {
+    if (ctx && ctx.theme) document.documentElement.style.colorScheme = ctx.theme;
+  }
+  function reportSize() {
+    notify("ui/notifications/size-changed", {
+      width: Math.ceil(document.documentElement.scrollWidth),
+      height: Math.ceil(document.documentElement.scrollHeight)
+    });
+  }
+  if (window.ResizeObserver) new ResizeObserver(reportSize).observe(document.body);
+
+  /* ---------- state ---------- */
+  var stack = [], cur = null, picked = {}, busy = false, notice = "", fresh = false;
+
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function rs(n) { return "₹" + Number(n).toLocaleString("en-IN"); }
+  function num(n) { return Number(n).toLocaleString("en-IN"); }
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+  function mark(isVeg) { return '<span class="mark ' + (isVeg ? "veg" : "nonveg") + '" role="img" aria-label="' + (isVeg ? "Veg" : "Non-veg") + '"></span>'; }
+
+  // Rating as a number plus a thin bar filled to rating/5.
+  function score(r) {
+    if (r == null) return '<span class="score"><b>No rating</b></span>';
+    return '<span class="score num"><b>' + Number(r).toFixed(1) + '</b><span class="bar" aria-hidden="true"><i style="width:' + Math.round(r / 5 * 100) + '%"></i></span></span>';
+  }
+  function rate(who, r, count, unit) {
+    return '<span class="rate"><span class="who">' + who + "</span>" + score(r) + '<span class="n num">' + num(count) + " " + unit + "</span></span>";
+  }
+
+  /* ---------- tool calls ---------- */
+  function callTool(name, args) {
+    return request("tools/call", { name: name, arguments: args }).then(function (res) {
+      if (res && res.isError) throw new Error((res.content && res.content[0] && res.content[0].text) || "The tool returned an error.");
+      return res;
+    });
+  }
+  function textOf(res) {
+    var t = res && res.content && res.content[0] && res.content[0].text;
+    if (!t) return "";
+    try {
+      var j = JSON.parse(t);
+      if (j && j.status === "needs_input") return "More detail is needed: " + (j.missing || []).join(", ") + ". Ask in chat to continue.";
+    } catch (e) {}
+    return t;
+  }
+  function finish(res, args, push) {
+    var sc = res && res.structuredContent;
+    if (sc && sc.view) {
+      if (push && cur) stack.push(cur);
+      cur = { view: sc.view, tool: sc.tool, args: sc.args || args, data: sc.data };
+      fresh = true;
+    } else notice = textOf(res) || "No results.";
+  }
+  function run(name, args, push) {
+    if (busy) return;
+    busy = true; notice = ""; render();
+    callTool(name, args).then(function (res) { finish(res, args, push); })
+      .catch(function (e) { notice = e.message; })
+      .then(function () { busy = false; render(); });
+  }
+  function go(name, args) { run(name, args, true); }
+  function requery(args) { if (cur) run(cur.tool, args, false); }
+
+  function onToolResult(p) {
+    var sc = p && p.structuredContent;
+    stack = []; picked = {}; notice = "";
+    if (sc && sc.view) { cur = { view: sc.view, tool: sc.tool, args: sc.args || {}, data: sc.data }; fresh = true; }
+    else { cur = null; notice = textOf(p) || "No results."; }
+    render();
+  }
+
+  /* ---------- filters ---------- */
+  var PRICE = [
+    { k: "any", label: "Any price", min: null, max: null },
+    { k: "u100", label: "Under ₹100", min: null, max: 99 },
+    { k: "m", label: "₹100 to 200", min: 100, max: 200 },
+    { k: "hi", label: "Costly, ₹200 up", min: 200, max: null }
+  ];
+  function priceOf(k) { return PRICE.filter(function (x) { return x.k === k; })[0]; }
+  function priceKey(a) {
+    var mn = a.min_price == null ? null : a.min_price, mx = a.max_price == null ? null : a.max_price;
+    for (var i = 0; i < PRICE.length; i++) if (PRICE[i].min === mn && PRICE[i].max === mx) return PRICE[i].k;
+    return "any";
+  }
+  var DISH_TOOLS = { search_dishes: 1, find_dish: 1, best_dish_near_me: 1, get_restaurant_details: 1 };
+  var PURE_VEG_TOOLS = { search_restaurants: 1, restaurants_near_me: 1 };
+
+  function withDiet(args, tool, diet) {
+    var a = Object.assign({}, args);
+    delete a.is_veg; delete a.veg_only; delete a.diet_any;
+    if (tool === "get_restaurant_details" || PURE_VEG_TOOLS[tool]) { if (diet === "veg") a.veg_only = true; }
+    else if (DISH_TOOLS[tool]) {
+      if (diet === "veg") a.is_veg = true;
+      else if (diet === "nonveg") a.is_veg = false;
+      else if (tool === "best_dish_near_me") a.diet_any = true;
+    }
+    return a;
+  }
+  function withPrice(args, key) {
+    var a = Object.assign({}, args), p = priceOf(key);
+    delete a.min_price; delete a.max_price;
+    if (p.min != null) a.min_price = p.min;
+    if (p.max != null) a.max_price = p.max;
+    return a;
+  }
+  function currentDiet(a) {
+    if (a.veg_only === true || a.is_veg === true) return "veg";
+    if (a.is_veg === false) return "nonveg";
+    return "all";
+  }
+  function seg(act, items, activeVal, label) {
+    return '<div class="seg" role="group" aria-label="' + label + '">' + items.map(function (it) {
+      return '<button data-act="' + act + '" data-val="' + it.v + '" aria-pressed="' + (it.v === activeVal ? "true" : "false") + '">' + (it.mark || "") + esc(it.t) + "</button>";
+    }).join("") + "</div>";
+  }
+  function dietControl(tool, args, allowNonVeg) {
+    var pure = !!PURE_VEG_TOOLS[tool];
+    var items = [{ v: "all", t: "All" }, { v: "veg", t: pure ? "Pure veg" : "Veg", mark: mark(true) }];
+    if (allowNonVeg) items.push({ v: "nonveg", t: "Non-veg", mark: mark(false) });
+    return '<div class="field"><span class="lab">Show</span>' + seg("diet", items, currentDiet(args), "Diet") + "</div>";
+  }
+  function priceControl(args, act) {
+    var key = act === "lprice" ? (cur.lprice || "any") : priceKey(args);
+    return '<div class="field"><span class="lab">Price</span>' + seg(act, PRICE.map(function (p) { return { v: p.k, t: p.label }; }), key, "Price range") + "</div>";
+  }
+  function sortControl() {
+    var opts = [["", "Best match"], ["rating", "Top rated"], ["price_asc", "Price, low to high"], ["price_desc", "Price, high to low"]];
+    return '<div class="field"><label for="sort">Sort</label><select id="sort" data-act="sort">' + opts.map(function (o) {
+      return '<option value="' + o[0] + '"' + ((cur.sort || "") === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+    }).join("") + "</select></div>";
+  }
+  function sortRows(rows, getPrice, getRating) {
+    var r = rows.slice(), s = cur.sort;
+    if (s === "price_asc") r.sort(function (a, b) { return getPrice(a) - getPrice(b); });
+    else if (s === "price_desc") r.sort(function (a, b) { return getPrice(b) - getPrice(a); });
+    else if (s === "rating") r.sort(function (a, b) { return (getRating(b) || 0) - (getRating(a) || 0); });
+    return r;
+  }
+
+  /* ---------- row builders ---------- */
+  function quote(text, who) {
+    return text ? '<blockquote class="quote">“' + esc(text) + "”" + (who ? " <cite>" + esc(who) + "</cite>" : "") + "</blockquote>" : "";
+  }
+
+  function dishRow(d) {
+    var name = d.dish || d.dish_name, price = d.price != null ? d.price : d.dish_price;
+    var drate = d.rating != null ? d.rating : d.dish_rating, dcount = d.rating_count != null ? d.rating_count : d.dish_rating_count;
+    var rname = d.restaurant || d.restaurant_name;
+    return '<li class="item"><div class="line">' + mark(d.is_veg) +
+      '<button class="open" data-act="dish" data-id="' + d.dish_id + '">' + esc(name) + "</button>" +
+      (d.is_bestseller ? '<span class="tag hot">Bestseller</span>' : "") +
+      (d.spice_level && d.spice_level !== "mild" ? '<span class="tag">' + esc(d.spice_level) + "</span>" : "") +
+      '<span class="leader"></span><span class="amt num">' + rs(price) + "</span></div>" +
+      '<div class="where">' + esc(rname) + (d.location ? ", " + esc(d.location) : "") + (d.distance_km != null ? ", " + d.distance_km + " km away" : "") + "</div>" +
+      '<div class="rates">' + rate("Dish", drate, dcount, "ratings") + rate("Restaurant", d.restaurant_rating, d.restaurant_review_count, "reviews") + "</div>" +
+      quote(d.latest_review) +
+      '<button class="aux" data-act="rest" data-id="' + d.restaurant_id + '">See menu at ' + esc(rname) + "</button></li>";
+  }
+
+  function restaurantRow(r) {
+    var id = r.restaurant_id != null ? r.restaurant_id : r.id;
+    return '<li class="item"><div class="line"><input type="checkbox" class="pick" data-act="pick" data-id="' + id + '"' + (picked[id] ? " checked" : "") + ' aria-label="Compare ' + esc(r.name) + '">' +
+      '<button class="open" data-act="rest" data-id="' + id + '">' + esc(r.name) + "</button>" +
+      (r.is_pure_veg ? '<span class="tag">Pure veg</span>' : "") + (r.is_open === false ? '<span class="tag off">Closed</span>' : "") +
+      '<span class="leader"></span><span class="amt num">' + rs(r.price_for_one) + "<small>for one</small></span></div>" +
+      '<div class="where">' + esc(r.category || "") + (r.location ? ", " + esc(r.location) : "") + (r.distance_km != null ? ", " + r.distance_km + " km away" : "") +
+      (r.delivery_time_min != null ? ", " + r.delivery_time_min + " min delivery" : "") + "</div>" +
+      '<div class="rates">' + rate("Rated", r.rating, r.review_count, "reviews") + "</div>" + quote(r.latest_review) + "</li>";
+  }
+
+  function reviewRows(rv) {
+    if (!rv || !rv.length) return '<div class="empty"><b>No reviews yet</b>Nobody has reviewed this one.</div>';
+    return '<ul>' + rv.map(function (x) {
+      return '<li class="item"><div class="line"><span class="open" style="font-size:14px">' + esc(x.reviewer) + '</span><span class="leader"></span>' + score(x.rating) + "</div>" +
+        (x.comment ? '<div class="where" style="color:var(--ink)">' + esc(x.comment) + "</div>" : "") + "</li>";
+    }).join("") + "</ul>";
+  }
+
+  /* ---------- views ---------- */
+  function heading() {
+    var a = cur.args || {}, n = (cur.data || []).length;
+    if (cur.view === "dishes") {
+      var diet = currentDiet(a) === "veg" ? "veg " : currentDiet(a) === "nonveg" ? "non-veg " : "";
+      var t = plural(n, diet + "dish", diet + "dishes");
+      if (a.query) t += " matching “" + a.query + "”";
+      if (a.min_price != null && a.max_price != null) t += " from " + rs(a.min_price) + " to " + rs(a.max_price);
+      else if (a.max_price != null) t += " under " + rs(a.max_price + (cur.tool === "search_dishes" || cur.tool === "find_dish" || cur.tool === "best_dish_near_me" ? 1 : 0));
+      else if (a.min_price != null) t += " at " + rs(a.min_price) + " or more";
+      if (a.location) t += " in " + a.location;
+      return t;
+    }
+    if (cur.view === "restaurants") {
+      var t2 = plural(n, a.veg_only ? "pure veg restaurant" : "restaurant", a.veg_only ? "pure veg restaurants" : "restaurants");
+      if (cur.tool === "weak_restaurants") t2 = plural(n, "weakly rated restaurant", "weakly rated restaurants");
+      if (a.location) t2 += " in " + a.location;
+      return t2;
+    }
+    if (cur.view === "restaurant") return cur.data.restaurant.name;
+    if (cur.view === "dish") return cur.data.dish.dish_name;
+    return "Compare restaurants";
+  }
+
+  function viewDishes() {
+    var a = cur.args || {};
+    var rows = sortRows(cur.data || [], function (d) { return d.price; }, function (d) { return d.rating; });
+    var h = '<div class="controls">' + dietControl(cur.tool, a, true) + priceControl(a, "price") + sortControl() + "</div>";
+    if (!rows.length) return h + '<div class="empty"><b>No dishes match</b>Set Show to All and Price to Any price to widen the search.</div>';
+    return h + "<ul>" + rows.map(dishRow).join("") + "</ul>";
+  }
+
+  function viewRestaurants() {
+    var a = cur.args || {}, lp = priceOf(cur.lprice || "any");
+    var all = cur.data || [];
+    var rows = all.filter(function (r) { return (lp.min == null || r.price_for_one >= lp.min) && (lp.max == null || r.price_for_one <= lp.max); });
+    rows = sortRows(rows, function (r) { return r.price_for_one; }, function (r) { return r.rating; });
+    var n = Object.keys(picked).length;
+    var h = '<div class="controls">' + (PURE_VEG_TOOLS[cur.tool] ? dietControl(cur.tool, a, false) : "") + priceControl(a, "lprice") + sortControl() + "</div>";
+    h += rows.length ? "<ul>" + rows.map(restaurantRow).join("") + "</ul>" :
+      '<div class="empty"><b>No restaurants match</b>Set Price to Any price to see all ' + all.length + ".</div>";
+    h += '<div class="dock"><button class="go" data-act="compare"' + (n >= 2 && n <= 4 ? "" : " disabled") + ">" + (n >= 2 ? "Compare " + n + " restaurants" : "Compare restaurants") + '</button>' +
+      '<span class="hint">' + (n < 2 ? "Tick 2 to 4 restaurants" : n > 4 ? "Pick at most 4" : "") + "</span></div>";
+    return h;
+  }
+
+  function viewRestaurant() {
+    var d = cur.data, r = d.restaurant, a = cur.args || {};
+    var h = '<div class="board"><div class="title"><h2>' + esc(r.name) + "</h2>" +
+      '<div class="where">' + esc(r.categories && r.categories.name) + ", " + esc(r.locations && r.locations.name) + ", " + esc(r.locations && r.locations.city) +
+      (r.is_pure_veg ? ' <span class="tag">Pure veg</span>' : "") + "</div></div>" +
+      '<div class="stats"><div class="stat"><div class="lab">Rating</div><div class="val">' + score(r.avg_rating) + '<div class="n hint num">' + num(r.review_count) + " reviews</div></div></div>" +
+      '<div class="stat"><div class="lab">For one</div><div class="val num">' + rs(r.price_for_one) + "</div></div>" +
+      '<div class="stat"><div class="lab">Delivery</div><div class="val num">' + r.delivery_time_min + " min</div></div>" +
+      '<div class="stat"><div class="lab">Status</div><div class="val">' + (r.is_open ? "Open" : '<span style="color:var(--nonveg)">Closed</span>') + "</div></div></div></div>";
+    h += '<div class="sect"><h2>Menu</h2><small class="num">' + plural(d.menu.length, "dish", "dishes") + "</small></div>";
+    h += '<div class="controls">' + dietControl("get_restaurant_details", a, false).replace("Veg</button>", "Veg only</button>") + priceControl(a, "price") + "</div>";
+    h += d.menu.length ? "<ul>" + d.menu.map(function (m) {
+      return '<li class="item"><div class="line">' + mark(m.is_veg) + '<button class="open" data-act="dish" data-id="' + m.id + '">' + esc(m.name) + "</button>" +
+        (m.is_bestseller ? '<span class="tag hot">Bestseller</span>' : "") + (m.spice_level !== "mild" ? '<span class="tag">' + esc(m.spice_level) + "</span>" : "") +
+        '<span class="leader"></span><span class="amt num">' + rs(m.price) + "</span></div>" +
+        '<div class="rates">' + rate("Dish", m.rating, m.rating_count, "ratings") + "</div>" +
+        (m.reviews && m.reviews.length ? quote(m.reviews[0].comment, m.reviews[0].reviewer) : "") + "</li>";
+    }).join("") + "</ul>" : '<div class="empty"><b>No dishes match</b>Set Show to All and Price to Any price to see the full menu.</div>';
+    h += '<div class="sect"><h2>Recent reviews</h2></div>' + reviewRows(d.recent_reviews);
+    return h;
+  }
+
+  function viewDish() {
+    var d = cur.data.dish;
+    var h = '<div class="board"><div class="title"><div class="line">' + mark(d.is_veg) + '<h2>' + esc(d.dish_name) + '</h2><span class="leader"></span><span class="bigprice num">' + rs(d.dish_price) + "</span></div>" +
+      '<div class="where">' + esc(d.category) + (d.is_bestseller ? ' <span class="tag hot">Bestseller</span>' : "") + (d.spice_level !== "mild" ? ' <span class="tag">' + esc(d.spice_level) + "</span>" : "") + "</div>" +
+      '<div class="rates">' + rate("Dish", d.dish_rating, d.dish_rating_count, "ratings") + "</div></div></div>";
+    h += '<div class="sect"><h2>Served by</h2></div><ul><li class="item"><div class="line"><button class="open" data-act="rest" data-id="' + d.restaurant_id + '">' + esc(d.restaurant_name) + "</button>" +
+      (d.is_open ? "" : '<span class="tag off">Closed</span>') + '<span class="leader"></span><span class="amt num">' + rs(d.price_for_one) + "<small>for one</small></span></div>" +
+      '<div class="where">' + esc(d.location) + ", " + esc(d.city) + ", " + d.delivery_time_min + " min delivery</div>" +
+      '<div class="rates">' + rate("Rated", d.restaurant_rating, d.restaurant_review_count, "reviews") + "</div></li></ul>";
+    h += '<div class="sect"><h2>Reviews of this dish</h2></div>' + reviewRows(cur.data.reviews);
+    return h;
+  }
+
+  function viewCompare() {
+    var rows = cur.data.restaurants || [];
+    function best(fn, hi) {
+      var v = rows.map(fn).filter(function (x) { return x != null; });
+      return v.length ? (hi ? Math.max.apply(null, v) : Math.min.apply(null, v)) : null;
+    }
+    function line(label, key, fmt, bestVal) {
+      return '<tr><th scope="row">' + label + "</th>" + rows.map(function (r) {
+        var v = key(r);
+        return '<td class="num' + (bestVal != null && v === bestVal ? " best" : "") + '">' + fmt(r) + "</td>";
+      }).join("") + "</tr>";
+    }
+    var none = function () { return null; };
+    var h = '<table class="cmp"><thead><tr><th></th>' + rows.map(function (r) {
+      return '<th scope="col"><button class="open" data-act="rest" data-id="' + r.id + '">' + esc(r.name) + '</button><div class="where" style="font-weight:400">' +
+        esc(r.categories && r.categories.name) + ", " + esc(r.locations && r.locations.name) + "</div></th>";
+    }).join("") + "</tr></thead><tbody>";
+    h += line("Rating", function (r) { return r.avg_rating; }, function (r) { return score(r.avg_rating); }, best(function (r) { return r.avg_rating; }, true));
+    h += line("Reviews", function (r) { return r.review_count; }, function (r) { return num(r.review_count); }, best(function (r) { return r.review_count; }, true));
+    h += line("For one", function (r) { return r.price_for_one; }, function (r) { return rs(r.price_for_one); }, best(function (r) { return r.price_for_one; }, false));
+    h += line("Delivery", function (r) { return r.delivery_time_min; }, function (r) { return r.delivery_time_min + " min"; }, best(function (r) { return r.delivery_time_min; }, false));
+    h += line("Pure veg", none, function (r) { return r.is_pure_veg ? "Yes" : "No"; }, null);
+    h += line("Status", none, function (r) { return r.is_open ? "Open" : "Closed"; }, null);
+    h += line("Top dishes", none, function (r) {
+      return (r.top_dishes || []).map(function (d) {
+        return '<div class="dishline">' + mark(d.is_veg) + "<span>" + esc(d.name) + ", " + rs(d.price) + " (" + Number(d.rating).toFixed(1) + ")</span></div>";
+      }).join("") || "None listed";
+    }, null);
+    h += "</tbody></table>";
+    if (cur.data.not_found) h += '<p class="hint">Not found: ' + cur.data.not_found.join(", ") + ".</p>";
+    return h + '<p class="hint">Highlighted cells are the best in their row.</p>';
+  }
+
+  function render() {
+    var app = document.getElementById("app");
+    if (!cur) {
+      app.innerHTML = notice ? '<div class="note" role="status">' + esc(notice) + "</div>" : '<p class="hint">' + (busy ? "Loading…" : "Waiting for results…") + "</p>";
+      return;
+    }
+    var body = cur.view === "dishes" ? viewDishes() : cur.view === "restaurants" ? viewRestaurants() :
+      cur.view === "restaurant" ? viewRestaurant() : cur.view === "dish" ? viewDish() : viewCompare();
+    var showHead = cur.view !== "restaurant" && cur.view !== "dish";
+    app.innerHTML = '<div class="head">' + (stack.length ? '<button class="back" data-act="back">Back to results</button>' : "") +
+      (showHead ? "<h1>" + esc(heading()) + "</h1>" : "") + "</div>" +
+      (notice ? '<div class="note" role="status">' + esc(notice) + "</div>" : "") +
+      '<div class="' + (fresh ? "enter" : "") + '" aria-busy="' + (busy ? "true" : "false") + '">' + body + "</div>";
+    fresh = false;
+    reportSize();
+  }
+
+  /* ---------- events ---------- */
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-act]");
+    if (!el || el.tagName === "SELECT") return;
+    var act = el.getAttribute("data-act"), id = Number(el.getAttribute("data-id")), val = el.getAttribute("data-val");
+    if (act === "pick") { if (el.checked) picked[id] = 1; else delete picked[id]; render(); var again = document.querySelector('.pick[data-id="' + id + '"]'); if (again) again.focus(); return; }
+    if (act === "back") { cur = stack.pop(); notice = ""; fresh = true; render(); return; }
+    if (act === "rest") { go("get_restaurant_details", { restaurant_id: id }); return; }
+    if (act === "dish") { go("get_dish_details", { dish_id: id }); return; }
+    if (act === "compare") {
+      var ids = Object.keys(picked).map(Number);
+      if (ids.length >= 2 && ids.length <= 4) go("compare_restaurants", { restaurant_ids: ids });
+      return;
+    }
+    if (act === "lprice") { cur.lprice = val; render(); return; }
+    if (act === "diet") requery(withDiet(cur.args || {}, cur.tool, val));
+    if (act === "price") requery(withPrice(cur.args || {}, val));
+  });
+  document.addEventListener("change", function (e) {
+    var el = e.target;
+    if (el.getAttribute && el.getAttribute("data-act") === "sort") { cur.sort = el.value; render(); var s = document.getElementById("sort"); if (s) s.focus(); }
+  });
+
+  /* ---------- start ---------- */
+  request("ui/initialize", {
+    protocolVersion: "2026-01-26",
+    appInfo: { name: "qsr-food-finder", version: "1.0.0" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+    clientInfo: { name: "qsr-food-finder", version: "1.0.0" },
+    capabilities: {}
+  }).then(function (r) {
+    applyContext(r && r.hostContext);
+    notify("ui/notifications/initialized");
+  }).catch(function () { notify("ui/notifications/initialized"); });
+  render();
+})();
+</script>
+</body>
+</html>

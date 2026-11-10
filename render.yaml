@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: qsr-mcp-server
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: TRANSPORT
+        value: http
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: MCP_AUTH_TOKEN
+        sync: false
