@@ -12,6 +12,7 @@ drop function if exists rpc_best_dishes_near(double precision, double precision,
 drop function if exists rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean);
 drop function if exists rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean, text, int);
 drop function if exists rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text);
+drop function if exists rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text[]);
 drop function if exists rpc_restaurants_near(double precision, double precision, double precision, text, numeric, int, boolean, int);
 
 create or replace function rpc_search_restaurants(
@@ -91,7 +92,8 @@ create or replace function rpc_search_dishes(
   p_query text default null,
   p_max_calories int default null,
   p_on_discount boolean default false,
-  p_avoid_allergens text[] default null
+  p_avoid_allergens text[] default null,
+  p_exclude_addons boolean default false   -- hide dips, raita, chai and other cheap sides or drinks (under 80 INR)
 )
 returns table (
   dish_id int, dish text, description text, menu_section text, restaurant_id int, restaurant text,
@@ -126,6 +128,7 @@ language sql stable security invoker as $$
     and (p_max_calories is null or dd.calories <= p_max_calories)
     and (not coalesce(p_on_discount, false) or dd.mrp > m.dish_price)
     and (p_avoid_allergens is null or not (coalesce(dd.allergens, '{}') && p_avoid_allergens))
+    and (not coalesce(p_exclude_addons, false) or not (dd.menu_section in ('Sides', 'Beverages') and m.dish_price < 80))
     and (p_query is null or m.dish_name ilike
          '%' || replace(replace(replace(p_query, '\', '\\'), '%', '\%'), '_', '\_') || '%')
   order by
@@ -136,7 +139,7 @@ language sql stable security invoker as $$
     case when p_sort_by = 'calories_asc' then dd.calories end asc nulls last,
     case when p_sort_by = 'discount'     then (dd.mrp - m.dish_price) * 1.0 / dd.mrp end desc nulls last,
     m.dish_rating desc nulls last, m.dish_rating_count desc, m.dish_id
-  limit least(greatest(coalesce(p_limit, 10), 1), 25);
+  limit least(greatest(coalesce(p_limit, 10), 1), 100);  -- the MCP tool itself caps at 25; the wider window lets it de-duplicate
 $$;
 
 create or replace function rpc_best_dishes_near(
@@ -172,6 +175,7 @@ language sql stable security invoker as $$
       and (p_is_veg is null or m.is_veg = p_is_veg)
       and (p_max_price is null or m.dish_price <= p_max_price)
       and (p_min_price is null or m.dish_price >= p_min_price)
+      and not (dd.menu_section in ('Sides', 'Beverages') and m.dish_price < 80)
   ) t
   where t.dist <= coalesce(p_radius_km, 3)
   order by t.dish_rating desc nulls last, t.dish_rating_count desc, t.dist asc, t.dish_id
@@ -271,7 +275,7 @@ $$;
 
 grant execute on function
   rpc_search_restaurants(text, text, numeric, numeric, int, int, int, boolean, text, int, int, boolean, boolean, text, int, text),
-  rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text[]),
+  rpc_search_dishes(text, text, boolean, int, numeric, text, boolean, text, int, int, text, int, boolean, text[], boolean),
   rpc_open_restaurants(text, text, text, int),
   rpc_best_dishes_near(double precision, double precision, double precision, boolean, int, int, int),
   rpc_weak_restaurants(text, numeric, int, int),

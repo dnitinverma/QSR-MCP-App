@@ -37,7 +37,7 @@ const limit = z
   .min(1)
   .max(MAX_LIMIT)
   .default(DEFAULT_LIMIT)
-  .describe(`Max rows (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT})`);
+  .describe(`Number of results (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT}). Use 3 for "top 3", 5 for "top 5".`);
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 
@@ -54,6 +54,12 @@ async function rpc(fn: string, args: Record<string, unknown>) {
   const { data, error } = await db().rpc(fn, args);
   if (error) throw new Error(error.message);
   return data as unknown[];
+}
+
+// One row per dish name (the first, i.e. best-sorted, branch), so ranked lists have variety.
+function uniqueByDish<T extends { dish: string }>(rows: T[], limit: number): T[] {
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.dish) ? false : (seen.add(r.dish), true))).slice(0, limit);
 }
 
 async function locationCoords(name: string) {
@@ -109,8 +115,8 @@ const TITLES: Record<string, string> = {
   meal_for_budget: "Meal for a budget", suggest_food: "What should I eat",
 };
 const EXAMPLES: Record<string, string> = {
-  search_restaurants: "Use for: best pizza places in Saket, restaurants, cafes, eateries, joints or dhabas in an area, a restaurant by name (Burger Barn), pure veg restaurants, Mughlai restaurants under 500 for two, new restaurants, cheapest or most expensive restaurants, fastest delivery.",
-  search_dishes: "Use for: veg dishes under 100, costliest biryani, spicy bestsellers, popular or most ordered dishes, mild dishes, non-veg under 200, dishes under 400 calories, a category like momos or pizza in an area.",
+  search_restaurants: "Use for: best pizza places in Saket, top 3 cheapest restaurants (add min_rating for good ones), best rated restaurants, restaurants, cafes, eateries, joints or dhabas in an area, a restaurant by name (Burger Barn), pure veg restaurants, Mughlai restaurants under 500 for two, new restaurants, cheapest or most expensive restaurants, fastest delivery.",
+  search_dishes: "Use for: cheapest dishes, top 3 cheap dishes in Gaur City, top rated dishes, best dishes, cheap eats, budget food, veg dishes under 100, costliest biryani, spicy bestsellers, popular or most ordered dishes, mild dishes, non-veg under 200, dishes under 400 calories, a category like momos or pizza in an area.",
   best_dish_near_me: "Use for: best dish near Hauz Khas, top veg dish near me.",
   weak_restaurants: "Use for: worst rated restaurants, places with few reviews.",
   get_restaurant_details: "Use for: tell me about a restaurant by name (Dosa Dhaba), show its menu, what does it serve, is it open, its address, hours, delivery fee, minimum order, FSSAI licence.",
@@ -223,7 +229,7 @@ export function registerTools(mcp: McpServer): void {
   reg("search_dishes", "dishes",
     {
       description:
-        "Search dishes (open restaurants only) by location, category, veg flag, price range (use max_price for cheap items, min_price or sort_by price_desc for costly ones), min rating, spice level, bestsellers. Each row has the description, price and MRP discount, calories, serves, allergens, diet (veg, egg or non-veg), the dish rating and rating count, a recent review, and the restaurant rating and review count. Read-only.",
+        "Search dishes (open restaurants only) by location, category, veg flag, price range (for cheap, cheapest or budget dishes use sort_by price_asc; for costly ones price_desc or min_price; max_price caps the price; for 'top 3' set limit 3), min rating, spice level, bestsellers. Each row has the description, price and MRP discount, calories, serves, allergens, diet (veg, egg or non-veg), the dish rating and rating count, a recent review, and the restaurant rating and review count. Read-only.",
       inputSchema: {
         location: location.optional(),
         category: category.optional(),
@@ -236,29 +242,32 @@ export function registerTools(mcp: McpServer): void {
         max_calories: z.number().int().positive().optional().describe("Max calories per serving"),
         on_discount: z.boolean().optional().describe("Only dishes selling below their MRP"),
         avoid_allergens: z.array(ALLERGEN).optional().describe("Exclude dishes containing any of these"),
+        unique_dishes: z.boolean().optional().describe("Default true: each dish name once. Set false to see the same dish at several restaurants."),
+        include_addons: z.boolean().optional().describe("With sort_by price_asc, cheap sides and drinks (dips, raita, chai) are hidden unless this is true. Set true only if the user asks for drinks, sides or the very cheapest item of any kind."),
         sort_by: z.enum(["rating", "price_asc", "price_desc", "popularity", "calories_asc", "discount"]).default("rating"),
         limit,
       },
     },
     async (a) => {
       try {
-        return json(
-          await rpc("rpc_search_dishes", {
-            p_location: a.location ?? null,
-            p_category: a.category ?? null,
-            p_is_veg: a.is_veg ?? null,
-            p_min_price: a.min_price ?? null,
-            p_max_price: a.max_price ?? null,
-            p_min_rating: a.min_rating ?? null,
-            p_spice_level: a.spice_level ?? null,
-            p_bestseller_only: a.bestseller_only ?? false,
-            p_max_calories: a.max_calories ?? null,
-            p_on_discount: a.on_discount ?? false,
-            p_avoid_allergens: a.avoid_allergens ?? null,
-            p_sort_by: a.sort_by,
-            p_limit: a.limit,
-          }),
-        );
+        const unique = a.unique_dishes !== false;
+        const rows = (await rpc("rpc_search_dishes", {
+          p_location: a.location ?? null,
+          p_category: a.category ?? null,
+          p_is_veg: a.is_veg ?? null,
+          p_min_price: a.min_price ?? null,
+          p_max_price: a.max_price ?? null,
+          p_min_rating: a.min_rating ?? null,
+          p_spice_level: a.spice_level ?? null,
+          p_bestseller_only: a.bestseller_only ?? false,
+          p_max_calories: a.max_calories ?? null,
+          p_on_discount: a.on_discount ?? false,
+          p_avoid_allergens: a.avoid_allergens ?? null,
+          p_exclude_addons: a.sort_by === "price_asc" && !a.include_addons,
+          p_sort_by: a.sort_by,
+          p_limit: unique ? 100 : a.limit,
+        })) as { dish: string }[];
+        return json(unique ? uniqueByDish(rows, a.limit) : rows);
       } catch (e) {
         return fail(e);
       }
@@ -306,17 +315,16 @@ export function registerTools(mcp: McpServer): void {
         const diet = got.diet;
         const isVeg = a.is_veg ?? (diet === "veg" ? true : diet === "non-veg" ? false : null);
 
-        return json(
-          await rpc("rpc_best_dishes_near", {
+        const nearby = (await rpc("rpc_best_dishes_near", {
             p_lat: lat,
             p_lng: lng,
             p_radius_km: a.radius_km,
             p_is_veg: isVeg,
             p_min_price: a.min_price ?? null,
             p_max_price: a.max_price ?? null,
-            p_limit: DEFAULT_LIMIT,
-          }),
-        );
+            p_limit: 25,
+          })) as { dish: string }[];
+        return json(uniqueByDish(nearby, DEFAULT_LIMIT));
       } catch (e) {
         return fail(e);
       }
@@ -761,25 +769,26 @@ export function registerTools(mcp: McpServer): void {
         avoid_allergens: z.array(ALLERGEN).optional().describe("Exclude dishes containing any of these"),
         min_price: z.number().int().min(0).optional().describe("Min dish price in INR"),
         max_price: z.number().int().positive().optional().describe("Max dish price in INR"),
+        include_addons: z.boolean().optional().describe("Default false: dips, raita, chai and other cheap sides or drinks are hidden so 'healthy' means real dishes. Set true to include them."),
         sort_by: z.enum(["rating", "calories_asc"]).default("rating"),
         limit,
       },
     },
     async (a) => {
       try {
-        return json(
-          await rpc("rpc_search_dishes", {
-            p_location: a.location ?? null,
-            p_category: a.category ?? null,
-            p_is_veg: a.is_veg ?? null,
-            p_min_price: a.min_price ?? null,
-            p_max_price: a.max_price ?? null,
-            p_max_calories: a.max_calories ?? null,
-            p_avoid_allergens: a.avoid_allergens ?? null,
-            p_sort_by: a.sort_by,
-            p_limit: a.limit,
-          }),
-        );
+        const rows = (await rpc("rpc_search_dishes", {
+          p_location: a.location ?? null,
+          p_category: a.category ?? null,
+          p_is_veg: a.is_veg ?? null,
+          p_min_price: a.min_price ?? null,
+          p_max_price: a.max_price ?? null,
+          p_max_calories: a.max_calories ?? null,
+          p_avoid_allergens: a.avoid_allergens ?? null,
+          p_exclude_addons: !a.include_addons,
+          p_sort_by: a.sort_by,
+          p_limit: 100,
+        })) as { dish: string }[];
+        return json(uniqueByDish(rows, a.limit));
       } catch (e) {
         return fail(e);
       }
@@ -1000,16 +1009,16 @@ export function registerTools(mcp: McpServer): void {
               p_min_price: a.min_price ?? null,
               p_max_price: a.max_price ?? null,
               p_min_rating: 4,
+              p_exclude_addons: true,
               p_sort_by: "rating",
               p_limit: 12,
             }),
           ),
         );
-        const rows = (batches.flat() as { dish_id: number; rating: number; rating_count: number }[])
-          .sort((x, y) => y.rating - x.rating || y.rating_count - x.rating_count)
-          .filter((r, i, all) => all.findIndex((o) => o.dish_id === r.dish_id) === i)
-          .slice(0, a.limit);
-        return json(rows);
+        const ranked = (batches.flat() as { dish: string; rating: number; rating_count: number }[]).sort(
+          (x, y) => y.rating - x.rating || y.rating_count - x.rating_count,
+        );
+        return json(uniqueByDish(ranked, a.limit));
       } catch (e) {
         return fail(e);
       }
